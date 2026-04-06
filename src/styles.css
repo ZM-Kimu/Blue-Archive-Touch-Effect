@@ -1,9 +1,7 @@
 :root {
   color-scheme: dark;
   font-family: "Segoe UI", sans-serif;
-  background:
-    radial-gradient(circle at top, rgba(50, 90, 130, 0.16), transparent 45%),
-    #04070d;
+  background: #000;
   color: #eaf7ff;
 }
 
@@ -33,34 +31,186 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  cursor: crosshair;
 }
 
-.app-hud {
+.debug-panel {
   position: absolute;
   left: 24px;
   bottom: 24px;
-  padding: 12px 14px;
-  border: 1px solid rgba(114, 207, 255, 0.22);
-  border-radius: 14px;
-  background: rgba(4, 11, 20, 0.62);
-  backdrop-filter: blur(12px);
-  pointer-events: none;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.76);
 }
 
-.app-hud strong,
-.app-hud span {
+.debug-panel__header {
+  margin-bottom: 14px;
+}
+
+.debug-panel__header strong,
+.debug-panel__header span {
   display: block;
 }
 
-.app-hud strong {
+.debug-panel__header strong {
   margin-bottom: 4px;
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(181, 226, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
 }
 
-.app-hud span {
+.debug-panel__header span {
   font-size: 14px;
-  color: rgba(234, 247, 255, 0.74);
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.debug-branches {
+  display: grid;
+  gap: 12px;
+}
+
+.debug-branch {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.debug-branch__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.debug-branch__copy strong,
+.debug-branch__copy span {
+  display: block;
+}
+
+.debug-branch__copy strong {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.debug-branch__copy span {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.debug-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.debug-toggle input {
+  margin: 0;
+}
+
+.debug-branch__controls .debug-control:last-child {
+  margin-bottom: 0;
+}
+
+.debug-preview {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.debug-preview select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.debug-stage + .debug-stage {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.debug-stage__header {
+  margin-bottom: 10px;
+}
+
+.debug-stage__header strong,
+.debug-stage__header span {
+  display: block;
+}
+
+.debug-stage__header strong {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.debug-stage__header span {
+  margin-top: 3px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.debug-control {
+  display: grid;
+  grid-template-columns: 74px 1fr 52px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.debug-control input[type="range"] {
+  width: 100%;
+  accent-color: #fff;
+}
+
+.debug-control output {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.debug-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+@media (max-width: 640px) {
+  .debug-panel {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+  }
+
+  .debug-control {
+    grid-template-columns: 58px 1fr 48px;
+  }
+
+  .debug-preview {
+    grid-template-columns: 58px 1fr;
+  }
 }

@@ -24,42 +24,52 @@ A1 = Transform(
     scale_y = 1.35
 )
 
-# GIF里这一层叫 particle system，但从结果看，
-# 它更像“把输入变成细长条/稀疏条带”的中间处理层
-# 手写复刻时可替换成：窄条mask + 少量断裂/抖动
-A2 = ParticleizeOrStripify(
+# 为 A1 添加缓动动画
+A2 = Animate(
     input = A1,
-    width = 0.03,
-    edge_breakup = 0.10
+    time = 1s,
+    movement_y = value,
+    movement_animation = ease-in-out
+    scale_to = 0,
+    scale_animation = ease-in
 )
 
-# 极坐标映射，把细条卷成弧
-A3 = PolarWarp(
+# 将 A2 生成随机数量
+A3 = Particleize(
     input = A2,
-    angle_span_deg = 240~280,
+    random_xy_value = x,
+    random_scale_value = x,
+    min_count = 1,
+    max_count = 3,
+)
+
+# 极坐标映射，把 A3 卷成弧
+A4 = PolarWarp(
+    input = A3,
+    angle_span_deg = 360,
     radius = 0.32~0.40
 )
 
-# 调整弧线尺寸
-A4 = Transform(
-    input = A3,
-    uniform_scale = 0.90~1.05
+# 水平翻转弧
+A5 = Transform(
+    input = A4,
+    scale_x = -1
 )
 
-# 轻微旋转动画
-A5 = AnimateRotation(
-    input = A4,
-    angle_deg_over_time = -10 -> +8
+# 生命周期中的线性旋转动画
+A6 = AnimateRotation(
+    input = A5,
+    angle_deg_over_time = 0 -> +20
 )
 
 # 上色为电蓝/青蓝
-A6 = Colorize(
+A7 = Colorize(
     input = A5,
     color = cyan_blue,
     emission = 1.0~1.5
 )
 
-MainArc = A6
+MainArc = A7
 
 
 # -------------------------
@@ -70,20 +80,20 @@ B0 = CircleShape(
     render_mode = "height"   # 中心亮、边缘软
 )
 
-# 用阈值把软圆变成“成形中的硬圆”
-B1 = AnimateThreshold(
-    input = B0,
-    threshold_over_time = 0.75 -> 0.35
-)
+# 创建一个实心圆
+B1 = CircleShape(radius = 0.12)
 
-# 灰度转透明
-B2 = GreyToAlpha(B1)
+# 用动画将 B0 的灰度着色到 B1（B2 最终呈现是纯色的灰度变化 over time）
+B2 = AnimateThreshold(
+    input = B1,
+    gray = B0
+)
 
 # 替换成深蓝色底盘
 B3 = ReplaceColor(
     input = B2,
-    color = dark_desaturated_blue,
-    alpha = 0.35~0.60
+    color = 4fb7ff,
+    alpha = 0.35-0.60
 )
 
 CoreDisk = B3
