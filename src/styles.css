@@ -1,0 +1,66 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(50, 90, 130, 0.16), transparent 45%),
+    #04070d;
+  color: #eaf7ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.app-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.app-hud {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  padding: 12px 14px;
+  border: 1px solid rgba(114, 207, 255, 0.22);
+  border-radius: 14px;
+  background: rgba(4, 11, 20, 0.62);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.app-hud strong,
+.app-hud span {
+  display: block;
+}
+
+.app-hud strong {
+  margin-bottom: 4px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(181, 226, 255, 0.9);
+}
+
+.app-hud span {
+  font-size: 14px;
+  color: rgba(234, 247, 255, 0.74);
+}

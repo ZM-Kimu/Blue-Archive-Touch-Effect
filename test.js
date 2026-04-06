@@ -1,0 +1,1 @@
+let a = new CanvasRenderingContext2D()

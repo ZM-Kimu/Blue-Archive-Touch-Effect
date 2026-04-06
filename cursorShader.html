@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Three.js Circle and Triangle Animation</title>
+        <style>
+            body {
+                margin: 0;
+                background-color: #000000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }
+
+            canvas {
+                display: block;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+        </style>
+        <script src="./js/three.min.js"></script>
+    </head>
+
+    <body>
+        <script>
+            let scene, camera, renderer
+            let circle, triangles = []
+            const maxRadius = 2  // 圆的最大半径
+            const triangleCount = 4 // 三角形数量
+            const triangleRadiusStart = maxRadius * 0.5 // 三角形的初始半径
+            let startTime
+
+            const duration = 700 // 动画总时间 0.7 秒
+
+            function init() {
+                // 创建场景
+                scene = new THREE.Scene()
+
+                // 创建相机
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
+                camera.position.z = 5
+
+                // 创建渲染器
+                renderer = new THREE.WebGLRenderer({ alpha: true })
+                renderer.setSize(window.innerWidth, window.innerHeight)
+                document.body.appendChild(renderer.domElement)
+
+                // 创建圆形
+                createCircle()
+
+                // 创建三角形
+                createTriangles()
+
+                // 调整窗口大小
+                window.addEventListener('resize', onWindowResize, false)
+
+                // 监听点击事件
+                document.addEventListener('click', startAnimation, false)
+
+                // 动画循环
+                animate()
+            }
+
+            function createCircle() {
+                if (circle) scene.remove(circle)
+
+                const geometry = new THREE.CircleGeometry(maxRadius, 32)
+                const material = new THREE.MeshBasicMaterial({ color: '#5ADCFF', transparent: true })
+
+                circle = new THREE.Mesh(geometry, material)
+                circle.scale.set(0, 0, 1)  // 初始缩放
+                scene.add(circle)
+            }
+
+            function createTriangles() {
+                triangles.forEach(triangle => scene.remove(triangle))
+                triangles = []  // 清空数组
+
+                for (let i = 0; i < triangleCount; i++) {
+                    const size = Math.random() * 0.2 + 0.1  // 随机大小0.1-0.3
+                    const geometry = new THREE.CircleGeometry(size, 3)  // 等边三角形
+                    const material = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true })
+                    const triangle = new THREE.Mesh(geometry, material)
+
+                    // 在半径为0.5的圆弧上随机位置
+                    const angle = Math.random() * Math.PI * 2
+                    const radius = 0.5
+                    triangle.position.set(radius * Math.cos(angle), radius * Math.sin(angle), 0)
+                    //三角形尖端指向Y轴的正半轴或负半轴
+                    triangle.rotation.z = (Math.random() > 0.5 ? Math.PI : 0) - Math.PI / 2
+
+
+                    triangle.scale.set(0, 0, 1)  // 初始缩放
+                    triangle.options = {
+                        angle: angle, size: size, targetOpacity: Math.random() * 0.33 + 0.66, changeTime: Math.random() * 125 + 40
+                    }  // 保存透明度和随机数据
+                    triangles.push(triangle)
+                    scene.add(triangle)
+                }
+            }
+
+            function startAnimation() {
+                startTime = performance.now()  // 动画开始时间
+                createCircle() // 生成新的圆形
+                createTriangles() // 生成新的三角形
+            }
+
+            function animate(timestamp) {
+                requestAnimationFrame(animate)
+
+                if (!startTime) return
+
+                const elapsed = timestamp - startTime
+                const progress = Math.min(elapsed / duration, 1)  // 计算动画进度
+
+                // 圆形的动画
+                const circleScale = 1 * progress   // 线性缩放
+
+                circle.scale.set(circleScale, circleScale, 1)  // 初始缩放
+
+                if (progress >= 0.1 && progress < 0.21) {
+                    let fillColor = '#ffffff' // 默认白色
+                    // 线性颜色渐变从白色到#c3eaff
+                    const colorProgress = Math.min((progress - 0.1) / 0.1, 1)
+                    const r = Math.ceil(255 + colorProgress * (123 - 255))
+                    const g = Math.ceil(255 + colorProgress * (193 - 255))
+                    const b = Math.ceil(255 + colorProgress * (255 - 255))
+                    fillColor = `rgb(${r}, ${g}, ${b})`
+                    circle.material.opacity = 0.8
+                    circle.material.color.set(fillColor)
+                }
+                if (progress >= 0.21 && progress < 0.3) {
+                    fillColor = "#7BC1FF"
+                    circle.material.opacity = 0.6
+                    circle.material.color.set(fillColor)
+                }
+                if (progress >= 0.3) {
+                    circle.material.opacity = 0
+                }
+
+                // 三角形的动画
+                triangles.forEach((triangle, index) => {
+                    const angle = triangle.options.angle
+                    const size = triangle.options.size
+
+                    // 0.15s 时，开始缩放，颜色渐变
+                    if (progress >= 0.15 && progress < 0.2) {
+                        const triangleProgress = Math.min((progress - 0.15) / 0.05, 1)  // 缩放线性到1
+                        triangle.scale.set(triangleProgress, triangleProgress, 1)
+                        triangle.material.color.set('#74e9fe')
+                        triangle.material.opacity = 0.8  // 随机透明度
+                    }
+
+                    // 透明度的交替变化
+                    if (progress >= 0.2 && progress < 0.7) {
+                        const timeSinceLastChange = elapsed % 125  // 随时间循环透明度变化
+                        if (timeSinceLastChange >= Math.random() * 125 + 40) {
+                            triangle.material.opacity = Math.random() * 0.44 + 0.66  // 随机透明度
+                        }
+                    }
+
+                    // 在 0.7 秒时，缩小到 0，移至半径为 1 的弧线上
+                    const triangleProgress = Math.max((0.7 - progress) / 0.7, 0)
+                    const triangleRadius = triangleRadiusStart + (maxRadius - triangleRadiusStart) * progress
+
+                    console.log(triangleRadius)
+
+                    triangle.scale.set(triangleProgress, triangleProgress, 1)  // 缩放到 0
+                    triangle.position.set(triangleRadius * Math.cos(angle), triangleRadius * Math.sin(angle), 0)  // 计算最终位置
+                })
+
+                // 渲染场景
+                renderer.render(scene, camera)
+            }
+
+            function onWindowResize() {
+                camera.aspect = window.innerWidth / window.innerHeight
+                camera.updateProjectionMatrix()
+                renderer.setSize(window.innerWidth, window.innerHeight)
+            }
+
+            init();
+        </script>
+    </body>
+
+</html>

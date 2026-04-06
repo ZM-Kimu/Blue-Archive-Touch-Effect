@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Canvas Animation</title>
+        <style>
+            body {
+                margin: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                background-color: #000;
+            }
+
+            canvas {
+                border: 1px solid black;
+            }
+        </style>
+    </head>
+
+    <body style="background-color: #00FF00;">
+        <canvas id="canvas" width="512" height="512"></canvas>
+        <canvas id="glCanvas" width="512" height="512" style="position: absolute; top: 0; left: 0;"></canvas>
+
+        <script>
+            const glCanvas = document.getElementById('glCanvas')
+            const gl = glCanvas.getContext('webgl')
+
+            const vsSource = `
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            void main() {
+              gl_Position = a_position;
+              v_texCoord = a_texCoord;
+            }
+          `
+
+            const fsSource = `
+precision mediump float;
+
+uniform sampler2D u_image; // 输入纹理
+uniform vec2 u_resolution; // 分辨率，用于计算纹理坐标
+varying vec2 v_texCoord; // 当前片段的纹理坐标
+
+// 辅助函数：增强像素颜色的对比度
+// 对比度增强使有色像素更加明亮，对比度增强的 factor 越大，对比度增强越强
+vec3 contrastEnhance(vec3 color, float factor) {
+    return vec3(0.5) + factor * (color - vec3(0.5));
+}
+
+// 辅助函数：计算当前像素与最近有色像素的距离
+// 返回最近有色像素的颜色，并通过 minDist 返回最短距离
+vec3 getClosestColorAndDistance(vec2 uv, vec2 resolution, out float minDist) {
+    vec2 texelSize = 1.0 / resolution; // 单个纹理单元的大小
+    minDist = 1000.0; // 初始化一个较大的最小距离
+    vec3 closestColor = vec3(0.0); // 初始化最近的颜色
+
+    // 遍历周围像素（-10 到 10 范围）
+    for (int x = -10; x <= 10; x++) {
+        for (int y = -10; y <= 10; y++) {
+            vec2 offset = vec2(x, y) * texelSize; // 偏移量
+            vec4 neighborColor = texture2D(u_image, uv + offset); // 获取邻近像素颜色
+
+            // 如果邻近像素是有色像素（即亮度大于阈值 0.1）
+            if (length(neighborColor.rgb) > 0.1) {
+                float dist = length(vec2(x, y)) * texelSize.x; // 计算距离
+                if (dist < minDist) { // 如果找到更近的有色像素
+                    minDist = dist; // 更新最小距离
+                    closestColor = neighborColor.rgb; // 更新最近的颜色
+                }
+            }
+        }
+    }
+    return closestColor; // 返回最接近的有色像素的颜色
+}
+
+// 反转的 Sigmoid 函数，用于控制光晕的非线性效果
+// 距离越远，光晕越弱
+float invertedSigmoid(float x) {
+    return 1.0 / (1.0 + exp(-10.0 * (x - 0.5)));  // 控制 Sigmoid 曲线的陡峭程度
+}
+
+void main() {
+    vec4 color = texture2D(u_image, v_texCoord); // 获取当前片段颜色
+    vec3 finalColor = color.rgb; // 初始化最终颜色
+
+    // 判断当前像素是否为无色（即背景）
+    if (length(color.rgb) < 0.1) {
+        // 获取最近的有色像素的颜色和距离
+        float dist;
+        vec3 closestColor = getClosestColorAndDistance(v_texCoord, u_resolution, dist);
+
+        // 使用反转的 Sigmoid 函数计算辉光强度
+        float glowFactor = invertedSigmoid(dist);
+
+        // 根据最近的有色像素生成光晕颜色，并逐渐降低其对比度
+        vec3 glowColor = contrastEnhance(closestColor, 1.0 - glowFactor); // 随距离减小对比度
+
+        // 将光晕颜色叠加到当前像素
+        // 使用乘法控制光晕强度，确保光晕颜色正常，不影响背景
+        finalColor = glowColor * glowFactor;  
+    } else {
+        // 对比度增强仅对有色像素生效
+        finalColor = contrastEnhance(color.rgb, 2.0);  // 增强有色像素的对比度
+    }
+
+    // 输出最终颜色
+    gl_FragColor = vec4(finalColor, 1.0);
+}
+
+          `
+            // 初始化着色器
+            function initShaderProgram(gl, vsSource, fsSource) {
+                const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource)
+                const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource)
+
+                const shaderProgram = gl.createProgram()
+                gl.attachShader(shaderProgram, vertexShader)
+                gl.attachShader(shaderProgram, fragmentShader)
+                gl.linkProgram(shaderProgram)
+
+                if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                    alert('无法初始化着色器程序: ' + gl.getProgramInfoLog(shaderProgram))
+                    return null
+                }
+                return shaderProgram
+            }
+
+            function loadShader(gl, type, source) {
+                const shader = gl.createShader(type)
+                gl.shaderSource(shader, source)
+                gl.compileShader(shader)
+
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    alert('着色器编译失败: ' + gl.getShaderInfoLog(shader))
+                    gl.deleteShader(shader)
+                    return null
+                }
+                return shader
+            }
+
+            const shaderProgram = initShaderProgram(gl, vsSource, fsSource)
+            const programInfo = {
+                attribLocations: {
+                    vertexPosition: gl.getAttribLocation(shaderProgram, 'a_position'),
+                    textureCoord: gl.getAttribLocation(shaderProgram, 'a_texCoord'),
+                },
+                uniformLocations: {
+                    u_image: gl.getUniformLocation(shaderProgram, 'u_image'),
+                    u_resolution: gl.getUniformLocation(shaderProgram, 'u_resolution'),
+                },
+            }
+
+            // Create buffers and set up positions for full-screen quad
+            const positionBuffer = gl.createBuffer()
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+            const positions = [
+                -1.0, -1.0,
+                1.0, -1.0,
+                -1.0, 1.0,
+                1.0, 1.0,
+            ]
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW)
+
+            const texCoordBuffer = gl.createBuffer()
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
+            const texCoords = [
+                0.0, 0.0,
+                1.0, 0.0,
+                0.0, 1.0,
+                1.0, 1.0,
+            ]
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW)
+        </script>
+        <script>
+            // 创建 WebGL 纹理
+            function createTexture(gl) {
+                const texture = gl.createTexture()
+                gl.bindTexture(gl.TEXTURE_2D, texture)
+
+                // 设置纹理参数
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+                return texture
+            }
+
+            function renderToTexture(gl, texture, canvas) {
+                // 将2D canvas的内容加载到WebGL纹理中
+                gl.bindTexture(gl.TEXTURE_2D, texture)
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas
+                )
+
+                // 设置纹理参数，确保正确处理透明度
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+                gl.generateMipmap(gl.TEXTURE_2D)
+            }
+
+            function drawScene(gl, programInfo, texture, canvas) {
+                // 将2D内容传递给WebGL纹理
+                renderToTexture(gl, texture, canvas)
+
+                // 清空WebGL画布
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+                // 启用混合模式
+                gl.enable(gl.BLEND)
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+                // 使用着色器程序
+                gl.useProgram(shaderProgram)
+
+                // 绑定位置缓冲区并设置属性
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+                gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 2, gl.FLOAT, false, 0, 0)
+                gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition)
+
+                // 绑定纹理坐标缓冲区
+                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
+                gl.vertexAttribPointer(programInfo.attribLocations.textureCoord, 2, gl.FLOAT, false, 0, 0)
+                gl.enableVertexAttribArray(programInfo.attribLocations.textureCoord)
+
+                // 设置分辨率
+                gl.uniform2f(programInfo.uniformLocations.u_resolution, glCanvas.width, glCanvas.height)
+
+                // 设置分辨率
+                gl.uniform2f(programInfo.uniformLocations.u_resolution, glCanvas.width, glCanvas.height)
+
+                // 绘制纹理（带辉光效果）
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+            }
+
+
+
+            const canvas = document.getElementById('canvas')
+            const ctx = canvas.getContext('2d')
+
+            let startTime
+
+            const duration = 700 // 动画总时间为0.7秒
+            const maxRadius = 200 // 圆的最大半径
+            const triangleCount = 4
+            const triangleRadiusStart = maxRadius * 0.5 // 初始半径为0.5 * maxRadius
+            const triangleRadiusEnd = maxRadius // 最终半径为maxRadius
+
+
+
+
+
+            function createTimelineEvent(start, end, callback) {
+                return function (elapsed) {
+                    if (elapsed >= start && elapsed <= end) {
+                        const progress = (elapsed - start) / (end - start)
+                        callback(progress, elapsed)
+                    }
+                }
+            }
+
+
+            function drawTriangle(x, y, size, scale, rotation, color, opacity) {
+                ctx.save()
+                ctx.translate(x, y)
+                ctx.rotate(rotation)
+                ctx.scale(scale, scale)
+                ctx.fillStyle = color
+                ctx.globalAlpha = opacity
+                ctx.beginPath()
+                ctx.moveTo(0, -size / 2)
+                ctx.lineTo(size / 2, size / 2)
+                ctx.lineTo(-size / 2, size / 2)
+                ctx.closePath()
+                ctx.fill()
+                ctx.restore()
+            }
+
+
+            function drawCircle(radius, fillColor) {
+                // 绘制圆形
+                ctx.beginPath()
+                ctx.arc(canvas.width / 2, canvas.height / 2, radius, 0, 2 * Math.PI)
+                ctx.fillStyle = fillColor
+                ctx.fill()
+            }
+
+            const triangles = Array.from({ length: triangleCount }, () => ({
+                angle: Math.random() * 2 * Math.PI, // 随机位置
+                size: Math.random() * 0.2 + 0.1,   // 大小在0.1-0.3之间
+                rotation: Math.random() > 0.5 ? 0 : Math.PI,  // 初始角度为0或180度
+                scale: 0,                          // 初始缩放为0
+                opacity: 1,                        // 初始透明度
+                color: '#ffffff',                  // 初始颜色为白色
+                nextOpacityChange: Math.random() * 85 + 170,// 下一次透明度变化时间
+
+                // 重新生成随机属性
+                update() {
+                    this.angle = Math.random() * 2 * Math.PI// 随机位置
+                    this.size = Math.random() * 0.2 + 0.1   // 大小在0.1-0.3之间
+                    this.rotation = Math.random() > 0.5 ? 0 : Math.PI  // 初始角度为0或180度
+                    this.scale = 0                        // 初始缩放为0
+                    this.opacity = 1                    // 初始透明度
+                    this.color = '#ffffff'                  // 初始颜色为白色
+                    this.nextOpacityChange = Math.random() * 85 + 170// 下一次透明度变化时间
+                }
+            }))
+
+            triangles.update = function () {
+                this.forEach(triangle => triangle.update())
+            }
+
+
+
+
+            // 动画帧更新
+            function animate(timestamp) {
+                // 生成随机的三角形
+
+
+                console.log("length:", triangles.length)
+
+                if (!startTime) startTime = timestamp
+                const elapsed = timestamp - startTime
+                const progress = Math.min(elapsed / duration, 1) // 进度，范围从0到1
+
+                // 清空画布
+                ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+                // 计算当前半径
+                const radius = maxRadius * progress
+
+                createTimelineEvent(100, 210, (progress, elapsed) => {
+                    let fillColor = '#ffffff' // 默认白色
+                    // 线性颜色渐变从白色到#c3eaff
+                    const colorProgress = Math.min((elapsed - 100) / 100, 1)
+                    const r = 255 + colorProgress * (123 - 255)
+                    const g = 255 + colorProgress * (193 - 255)
+                    const b = 255 + colorProgress * (255 - 255)
+                    fillColor = `rgba(${r}, ${g}, ${b},80)`
+                    drawCircle(radius, fillColor)
+                })(elapsed)
+
+                createTimelineEvent(210, 300, () => {
+                    fillColor = "#7BC1FFAA"
+                    drawCircle(radius, fillColor)
+                })(elapsed)
+
+                createTimelineEvent(300, duration, () => {
+                    fillColor = '#00000000' // 颜色变为透明
+                    drawCircle(radius, fillColor)
+                })(elapsed)
+
+
+
+                // 绘制三角形
+                triangles.forEach(triangle => {
+                    // 更新三角形缩放比例和透明度
+                    if (elapsed >= 150 && elapsed < 200) {
+                        const triangleProgress = Math.min((elapsed - 150) / (200 - 150), 1)
+                        triangle.scale = triangleProgress // 缩放从0到1
+
+                        if (elapsed >= 200) {
+                            // 透明度的变化
+                            const timeSinceLastChange = elapsed - triangle.nextOpacityChange
+                            if (timeSinceLastChange >= Math.random() * 125 + 40) {
+                                triangle.opacity = Math.random() * 0.33 + 0.66 // 随机透明度在0.66到1之间
+                                triangle.nextOpacityChange = elapsed + (Math.random() * 85 + 40)
+                            }
+                        }
+                    }
+
+                    // 最后阶段缩小三角形到0
+                    if (elapsed >= 200 && elapsed <= 700) {
+                        const triangleProgress = Math.max((700 - elapsed) / 700, 0)
+                        triangle.scale = triangleProgress // 缩放从0到1
+
+                    }
+                    // 计算三角形位置的半径，随着时间增加从0.5 * maxRadius到maxRadius
+                    const triangleRadius = triangleRadiusStart + (triangleRadiusEnd - triangleRadiusStart) * progress
+                    const x = canvas.width / 2 + triangleRadius * Math.cos(triangle.angle)
+                    const y = canvas.height / 2 + triangleRadius * Math.sin(triangle.angle)
+
+                    drawTriangle(x, y, triangle.size * maxRadius, triangle.scale, triangle.rotation, '#74e9fe', triangle.opacity)
+
+                    const texture = createTexture(gl)
+                    drawScene(gl, programInfo, texture, canvas)
+
+                })
+
+                // 动画结束判断
+                if (progress < 1) {
+                    requestAnimationFrame(animate)
+                }
+            }
+
+            // 开始动画
+            canvas.addEventListener("click", (ev) => {
+                triangles.update()
+                startTime = 0
+                requestAnimationFrame(animate)
+            })
+        </script>
+    </body>
+
+</html>
