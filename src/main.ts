@@ -1,18 +1,21 @@
-import { Mesh, Program, Renderer, Triangle } from 'ogl'
+import { Mesh, Program, RenderTarget, Renderer, Triangle } from 'ogl'
 import fragment from './shaders/click-fx.frag'
+import postFragment from './shaders/post-fx.frag'
 import vertex from './shaders/click-fx.vert'
 import './styles.css'
 
 const MAX_BURSTS = 8
 const PARTICLES_PER_BURST = 3
+const FRAGMENT_PARTICLES_PER_BURST = 10
 const MAX_ACTIVE_PARTICLES = MAX_BURSTS * PARTICLES_PER_BURST
 const DEG_TO_RAD = Math.PI / 180
 const BOUNDS_SAMPLE_COUNT = 96
 
 type UniformValue<T> = { value: T }
-type BranchKey = 'mainArc' | 'coreDisk' | 'mainFx'
-type StageKey = 'a1' | 'a2' | 'a3' | 'a4' | 'a6' | 'a7' | 'b0' | 'b1' | 'b2' | 'b3' | 'b4' | 'c1'
+type BranchKey = 'mainArc' | 'coreDisk' | 'mainFx' | 'fragments' | 'filter'
+type StageKey = 'a1' | 'a2' | 'a3' | 'a4' | 'a6' | 'a7' | 'b0' | 'b1' | 'b2' | 'b3' | 'b4' | 'c1' | 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6' | 'd7' | 'd8' | 'd9' | 'fx'
 type CorePreviewStage = 'b0' | 'b1' | 'b2' | 'b3' | 'b4'
+type FragmentPreviewStage = 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6' | 'd7' | 'd8' | 'd9'
 
 type BranchVisibility = Record<BranchKey, boolean>
 
@@ -46,6 +49,34 @@ type DebugState = {
   c1StartScale: number
   c1EndScale: number
   c1TimeFraction: number
+  dTriangleSize: number
+  d3OuterRadius: number
+  d3InnerRadius: number
+  d5CountMin: number
+  d5CountMax: number
+  d5SpeedMin: number
+  d5SpeedMax: number
+  d5LifetimeMin: number
+  d5LifetimeMax: number
+  d5SizeMin: number
+  d5SizeMax: number
+  d6StartScale: number
+  d6PeakScale: number
+  d6EndScale: number
+  d6GrowTimeFraction: number
+  d8AlphaMax: number
+  d8AlphaMin: number
+  d8FlashPeriodMin: number
+  d8FlashPeriodMax: number
+  d9StartScale: number
+  d9EndScale: number
+  d9TimeFraction: number
+  fxBlurRadius: number
+  fxBlurMix: number
+  fxBloomThresholdLow: number
+  fxBloomThresholdHigh: number
+  fxBloomIntensity: number
+  fxScreenMix: number
 }
 
 type ParticleState = {
@@ -58,6 +89,21 @@ type ParticleState = {
   radius: number
   scaleX: number
   scaleY: number
+  enabled: number
+}
+
+type FragmentParticleState = {
+  startTime: number
+  lifetime: number
+  spawnX: number
+  spawnY: number
+  dirX: number
+  dirY: number
+  speed: number
+  rotation: number
+  spriteIndex: number
+  sizeMultiplier: number
+  flashPeriod: number
   enabled: number
 }
 
@@ -84,6 +130,11 @@ type BurstState = {
   b3GrayMultiplier: number
   b3AlphaMultiplier: number
   b4Alpha: number
+  dTriangleSize: number
+  d3OuterRadius: number
+  d3InnerRadius: number
+  fragmentDuration: number
+  fragmentParticles: FragmentParticleState[]
   particles: ParticleState[]
   bounds: BurstBounds
 }
@@ -116,6 +167,11 @@ type CorePreviewOption = {
   label: string
 }
 
+type FragmentPreviewOption = {
+  key: FragmentPreviewStage
+  label: string
+}
+
 const app = document.querySelector<HTMLDivElement>('#app')
 
 if (!app)
@@ -127,7 +183,7 @@ const config: DebugState = {
   radius: 0.1,
   scaleX: 0.09,
   scaleY: 1,
-  duration: 0.55,
+  duration: 0.7,
   movementY: -0.2,
   randomX: 0.01,
   randomY: 0.08,
@@ -153,6 +209,34 @@ const config: DebugState = {
   c1StartScale: 0.2,
   c1EndScale: 1,
   c1TimeFraction: 0.85,
+  dTriangleSize: 0.53,
+  d3OuterRadius: 0.203,
+  d3InnerRadius: 0.098,
+  d5CountMin: 4,
+  d5CountMax: 4,
+  d5SpeedMin: 0.04,
+  d5SpeedMax: 0.08,
+  d5LifetimeMin: 0.38,
+  d5LifetimeMax: 0.6,
+  d5SizeMin: 0.74,
+  d5SizeMax: 1.39,
+  d6StartScale: 0,
+  d6PeakScale: 1,
+  d6EndScale: 0,
+  d6GrowTimeFraction: 0.15,
+  d8AlphaMax: 1,
+  d8AlphaMin: 0.35,
+  d8FlashPeriodMin: 0.07,
+  d8FlashPeriodMax: 0.15,
+  d9StartScale: 0.85,
+  d9EndScale: 1.1,
+  d9TimeFraction: 0.3,
+  fxBlurRadius: 1.85,
+  fxBlurMix: 0.6,
+  fxBloomThresholdLow: 0.1,
+  fxBloomThresholdHigh: 0.74,
+  fxBloomIntensity: 1.48,
+  fxScreenMix: 1,
 }
 
 const controls: ControlDefinition[] = [
@@ -185,12 +269,42 @@ const controls: ControlDefinition[] = [
   { branch: 'mainFx', stage: 'c1', key: 'c1StartScale', label: 'Start Scale', min: 0.1, max: 1, step: 0.01 },
   { branch: 'mainFx', stage: 'c1', key: 'c1EndScale', label: 'End Scale', min: 0.5, max: 1.5, step: 0.01 },
   { branch: 'mainFx', stage: 'c1', key: 'c1TimeFraction', label: 'Time Frac', min: 0.1, max: 1, step: 0.01 },
+  { branch: 'fragments', stage: 'd0', key: 'dTriangleSize', label: 'Size', min: 0.25, max: 2, step: 0.01 },
+  { branch: 'fragments', stage: 'd3', key: 'd3OuterRadius', label: 'Outer Radius', min: 0.08, max: 0.3, step: 0.0025 },
+  { branch: 'fragments', stage: 'd3', key: 'd3InnerRadius', label: 'Inner Radius', min: 0.0, max: 0.16, step: 0.0025 },
+  { branch: 'fragments', stage: 'd5', key: 'd5CountMin', label: 'Count Min', min: 1, max: 10, step: 1 },
+  { branch: 'fragments', stage: 'd5', key: 'd5CountMax', label: 'Count Max', min: 1, max: 10, step: 1 },
+  { branch: 'fragments', stage: 'd5', key: 'd5SpeedMin', label: 'Speed Min', min: 0.02, max: 0.3, step: 0.01 },
+  { branch: 'fragments', stage: 'd5', key: 'd5SpeedMax', label: 'Speed Max', min: 0.02, max: 0.3, step: 0.01 },
+  { branch: 'fragments', stage: 'd5', key: 'd5LifetimeMin', label: 'Life Min', min: 0.1, max: 0.6, step: 0.01 },
+  { branch: 'fragments', stage: 'd5', key: 'd5LifetimeMax', label: 'Life Max', min: 0.1, max: 0.6, step: 0.01 },
+  { branch: 'fragments', stage: 'd5', key: 'd5SizeMin', label: 'Size Min', min: 0.3, max: 1.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd5', key: 'd5SizeMax', label: 'Size Max', min: 0.3, max: 1.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd6', key: 'd6StartScale', label: 'Start Scale', min: 0, max: 1.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd6', key: 'd6PeakScale', label: 'Peak Scale', min: 0.1, max: 1.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd6', key: 'd6EndScale', label: 'End Scale', min: 0, max: 1.0, step: 0.01 },
+  { branch: 'fragments', stage: 'd6', key: 'd6GrowTimeFraction', label: 'Grow Frac', min: 0.02, max: 0.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd8', key: 'd8AlphaMax', label: 'Alpha Max', min: 0, max: 1, step: 0.01 },
+  { branch: 'fragments', stage: 'd8', key: 'd8AlphaMin', label: 'Alpha Min', min: 0, max: 1, step: 0.01 },
+  { branch: 'fragments', stage: 'd8', key: 'd8FlashPeriodMin', label: 'Flash Min', min: 0.02, max: 0.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd8', key: 'd8FlashPeriodMax', label: 'Flash Max', min: 0.02, max: 0.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd9', key: 'd9StartScale', label: 'Start Scale', min: 0.2, max: 1.5, step: 0.01 },
+  { branch: 'fragments', stage: 'd9', key: 'd9EndScale', label: 'End Scale', min: 0.2, max: 1.8, step: 0.01 },
+  { branch: 'fragments', stage: 'd9', key: 'd9TimeFraction', label: 'Time Frac', min: 0.02, max: 0.5, step: 0.01 },
+  { branch: 'filter', stage: 'fx', key: 'fxBlurRadius', label: 'Blur Radius', min: 0.25, max: 3, step: 0.05 },
+  { branch: 'filter', stage: 'fx', key: 'fxBlurMix', label: 'Blur Mix', min: 0, max: 0.75, step: 0.01 },
+  { branch: 'filter', stage: 'fx', key: 'fxBloomThresholdLow', label: 'Bloom Low', min: 0, max: 1, step: 0.01 },
+  { branch: 'filter', stage: 'fx', key: 'fxBloomThresholdHigh', label: 'Bloom High', min: 0, max: 1, step: 0.01 },
+  { branch: 'filter', stage: 'fx', key: 'fxBloomIntensity', label: 'Bloom Intensity', min: 0, max: 2.5, step: 0.01 },
+  { branch: 'filter', stage: 'fx', key: 'fxScreenMix', label: 'Screen Mix', min: 0, max: 1, step: 0.01 },
 ]
 
 const branchDefinitions: BranchDefinition[] = [
   { key: 'mainArc', title: 'Branch A', subtitle: 'MainArc / A7' },
   { key: 'coreDisk', title: 'Branch B', subtitle: 'CoreDisk / B4' },
   { key: 'mainFx', title: 'Branch C', subtitle: 'MainFX / C1' },
+  { key: 'fragments', title: 'Branch D', subtitle: 'Fragments / D8' },
+  { key: 'filter', title: 'Filter', subtitle: 'FX / Bloom + Blur + Screen' },
 ]
 
 const stageDefinitions: StageDefinition[] = [
@@ -206,6 +320,17 @@ const stageDefinitions: StageDefinition[] = [
   { key: 'b3', branch: 'coreDisk', title: 'B3', subtitle: 'Threshold / Gray+Alpha' },
   { key: 'b4', branch: 'coreDisk', title: 'B4', subtitle: 'Replace Color' },
   { key: 'c1', branch: 'mainFx', title: 'C1', subtitle: 'Composite Scale (ease-out)' },
+  { key: 'd0', branch: 'fragments', title: 'D0', subtitle: 'Triangle Shape' },
+  { key: 'd1', branch: 'fragments', title: 'D1', subtitle: 'Flip Y' },
+  { key: 'd2', branch: 'fragments', title: 'D2', subtitle: 'Particle Sprites' },
+  { key: 'd3', branch: 'fragments', title: 'D3', subtitle: 'Donut Shape' },
+  { key: 'd4', branch: 'fragments', title: 'D4', subtitle: 'Particle Distribution Map' },
+  { key: 'd5', branch: 'fragments', title: 'D5', subtitle: 'Burst Particle System' },
+  { key: 'd6', branch: 'fragments', title: 'D6', subtitle: 'Scale Over Lifetime' },
+  { key: 'd7', branch: 'fragments', title: 'D7', subtitle: 'Color Over Lifetime' },
+  { key: 'd8', branch: 'fragments', title: 'D8', subtitle: 'Alpha Over Lifetime' },
+  { key: 'd9', branch: 'fragments', title: 'D9', subtitle: 'Init Scale' },
+  { key: 'fx', branch: 'filter', title: 'FX', subtitle: 'Bloom + Blur + Screen' },
 ]
 
 const corePreviewOptions: CorePreviewOption[] = [
@@ -216,17 +341,39 @@ const corePreviewOptions: CorePreviewOption[] = [
   { key: 'b4', label: 'B4' },
 ]
 
+const fragmentPreviewOptions: FragmentPreviewOption[] = [
+  { key: 'd0', label: 'D0' },
+  { key: 'd1', label: 'D1' },
+  { key: 'd2', label: 'D2' },
+  { key: 'd3', label: 'D3' },
+  { key: 'd4', label: 'D4' },
+  { key: 'd5', label: 'D5' },
+  { key: 'd6', label: 'D6' },
+  { key: 'd7', label: 'D7' },
+  { key: 'd8', label: 'D8' },
+  { key: 'd9', label: 'D9' },
+]
+
 const branchVisibility: BranchVisibility = {
   mainArc: true,
   coreDisk: true,
   mainFx: true,
+  fragments: true,
+  filter: true,
 }
 
 let corePreviewStage: CorePreviewStage = 'b4'
+let fragmentPreviewStage: FragmentPreviewStage = 'd8'
 
 const formatValue = (key: keyof DebugState, value: number) =>
 {
-  if (key === 'minCount' || key === 'maxCount' || key === 'angleSpanDeg')
+  if (
+    key === 'minCount'
+    || key === 'maxCount'
+    || key === 'angleSpanDeg'
+    || key === 'd5CountMin'
+    || key === 'd5CountMax'
+  )
   {
     return String(Math.round(value))
   }
@@ -236,7 +383,7 @@ const formatValue = (key: keyof DebugState, value: number) =>
     return value.toFixed(1)
   }
 
-  if (key === 'radius' || key === 'arcRadius' || key === 'b0Radius' || key === 'b1Radius')
+  if (key === 'radius' || key === 'arcRadius' || key === 'b0Radius' || key === 'b1Radius' || key === 'd3OuterRadius' || key === 'd3InnerRadius')
   {
     return value.toFixed(3)
   }
@@ -282,6 +429,17 @@ const createCorePreviewMarkup = () => `
   </label>
 `
 
+const createFragmentPreviewMarkup = () => `
+  <label class="debug-preview">
+    <span>Preview</span>
+    <select data-fragment-preview>
+      ${fragmentPreviewOptions
+        .map(({ key, label }) => `<option value="${key}" ${fragmentPreviewStage === key ? 'selected' : ''}>${label}</option>`)
+        .join('')}
+    </select>
+  </label>
+`
+
 const createBranchMarkup = ({ key, title, subtitle }: BranchDefinition) => `
   <section class="debug-branch">
     <div class="debug-branch__header">
@@ -291,11 +449,12 @@ const createBranchMarkup = ({ key, title, subtitle }: BranchDefinition) => `
       </div>
       <label class="debug-toggle">
         <input data-visibility="${key}" type="checkbox" ${branchVisibility[key] ? 'checked' : ''} />
-        <span>Visible</span>
+        <span>${key === 'filter' ? 'Enabled' : 'Visible'}</span>
       </label>
     </div>
     <div class="debug-branch__controls">
       ${key === 'coreDisk' ? createCorePreviewMarkup() : ''}
+      ${key === 'fragments' ? createFragmentPreviewMarkup() : ''}
       ${stageDefinitions.filter((stage) => stage.branch === key).map(createStageMarkup).join('')}
     </div>
   </section>
@@ -314,7 +473,7 @@ panel.innerHTML = `
   <div class="debug-branches">
     ${branchDefinitions.map(createBranchMarkup).join('')}
   </div>
-  <p class="debug-hint">Most generation parameters apply on next click. Visibility, A7 color, and C1 controls update immediately.</p>
+  <p class="debug-hint">Most generation parameters apply on next click. Visibility, A7 color, C1 controls, filter controls, and preview selectors update immediately.</p>
 `
 
 shell.appendChild(panel)
@@ -334,17 +493,36 @@ gl.canvas.className = 'app-canvas'
 shell.prepend(gl.canvas)
 
 const geometry = new Triangle(gl)
+const sceneTarget = new RenderTarget(gl, {
+  width: gl.canvas.width,
+  height: gl.canvas.height,
+  depth: false,
+  stencil: false,
+})
 
 const burstData = new Array<number>(MAX_BURSTS * 4).fill(0)
 const burstCoreData = new Array<number>(MAX_BURSTS * 4).fill(0)
 const burstCoreAnimData = new Array<number>(MAX_BURSTS * 4).fill(0)
 const burstCoreToneData = new Array<number>(MAX_BURSTS * 4).fill(0)
+const burstFragmentData = new Array<number>(MAX_BURSTS * 4).fill(0)
 const burstBounds = new Array<number>(MAX_BURSTS * 4).fill(0)
 const particleSlotData = Array.from({ length: PARTICLES_PER_BURST }, () => ({
   a: new Array<number>(MAX_BURSTS * 4).fill(0),
   b: new Array<number>(MAX_BURSTS * 4).fill(0),
   c: new Array<number>(MAX_BURSTS * 4).fill(0),
 }))
+const fragmentParticleSlotData = Array.from({ length: FRAGMENT_PARTICLES_PER_BURST }, () => ({
+  a: new Array<number>(MAX_BURSTS * 4).fill(0),
+  b: new Array<number>(MAX_BURSTS * 4).fill(0),
+  c: new Array<number>(MAX_BURSTS * 4).fill(0),
+}))
+const fragmentParticleUniforms = Object.fromEntries(
+  fragmentParticleSlotData.flatMap((slot, index) => [
+    [`uFragmentParticleA${index}`, { value: slot.a }],
+    [`uFragmentParticleB${index}`, { value: slot.b }],
+    [`uFragmentParticleC${index}`, { value: slot.c }],
+  ])
+) as Record<string, UniformValue<number[]>>
 
 const uniforms: Record<string, UniformValue<number | number[]>> = {
   uTime: { value: 0 },
@@ -353,6 +531,7 @@ const uniforms: Record<string, UniformValue<number | number[]>> = {
   uBurstCoreData: { value: burstCoreData },
   uBurstCoreAnimData: { value: burstCoreAnimData },
   uBurstCoreToneData: { value: burstCoreToneData },
+  uBurstFragmentData: { value: burstFragmentData },
   uBurstBounds: { value: burstBounds },
   uParticleA0: { value: particleSlotData[0].a },
   uParticleB0: { value: particleSlotData[0].b },
@@ -367,8 +546,13 @@ const uniforms: Record<string, UniformValue<number | number[]>> = {
   uRotationSpeedRad: { value: config.rotationSpeedDeg * DEG_TO_RAD },
   uArcColor: { value: [config.arcColorR, config.arcColorG, config.arcColorB] },
   uCompositeScaleParams: { value: [config.c1StartScale, config.c1EndScale, config.c1TimeFraction] },
+  uFragmentScaleCurveParams: { value: [config.d6StartScale, config.d6PeakScale, config.d6EndScale, config.d6GrowTimeFraction] },
+  uFragmentAlphaParams: { value: [config.d8AlphaMax, config.d8AlphaMin] },
+  uFragmentInitScaleParams: { value: [config.d9StartScale, config.d9EndScale, config.d9TimeFraction] },
   uCorePreviewStage: { value: 4 },
-  uBranchVisibility: { value: [1, 1, 1] },
+  uFragmentPreviewStage: { value: 8 },
+  uBranchVisibility: { value: [1, 1, 1, 1] },
+  ...fragmentParticleUniforms,
 }
 
 const program = new Program(gl, {
@@ -378,6 +562,19 @@ const program = new Program(gl, {
 })
 
 const mesh = new Mesh(gl, { geometry, program })
+const postUniforms = {
+  uSceneTexture: { value: sceneTarget.texture },
+  uPostResolution: { value: [gl.canvas.width, gl.canvas.height] },
+  uPostParams: { value: [config.fxBlurRadius, config.fxBlurMix, config.fxBloomIntensity, config.fxScreenMix] },
+  uPostBloomThresholds: { value: [config.fxBloomThresholdLow, config.fxBloomThresholdHigh] },
+  uPostEnabled: { value: 1 },
+}
+const postProgram = new Program(gl, {
+  vertex,
+  fragment: postFragment,
+  uniforms: postUniforms,
+})
+const postMesh = new Mesh(gl, { geometry, program: postProgram })
 
 const createParticleState = (): ParticleState => ({
   startTime: -100,
@@ -389,6 +586,21 @@ const createParticleState = (): ParticleState => ({
   radius: 0,
   scaleX: 0,
   scaleY: 0,
+  enabled: 0,
+})
+
+const createFragmentParticleState = (): FragmentParticleState => ({
+  startTime: -100,
+  lifetime: 0,
+  spawnX: 0,
+  spawnY: 0,
+  dirX: 0,
+  dirY: 0,
+  speed: 0,
+  rotation: 0,
+  spriteIndex: 0,
+  sizeMultiplier: 1,
+  flashPeriod: 0.1,
   enabled: 0,
 })
 
@@ -408,6 +620,11 @@ const createBurstState = (): BurstState => ({
   b3GrayMultiplier: 1,
   b3AlphaMultiplier: 1,
   b4Alpha: 1,
+  dTriangleSize: 0.53,
+  d3OuterRadius: 0.203,
+  d3InnerRadius: 0.098,
+  fragmentDuration: 0,
+  fragmentParticles: Array.from({ length: FRAGMENT_PARTICLES_PER_BURST }, createFragmentParticleState),
   particles: Array.from({ length: PARTICLES_PER_BURST }, createParticleState),
   bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
 })
@@ -420,6 +637,7 @@ let currentTime = 0
 const controlElements = new Map<keyof DebugState, { input: HTMLInputElement; output: HTMLOutputElement }>()
 const visibilityElements = new Map<BranchKey, HTMLInputElement>()
 const corePreviewElement = panel.querySelector<HTMLSelectElement>('select[data-core-preview]')
+const fragmentPreviewElement = panel.querySelector<HTMLSelectElement>('select[data-fragment-preview]')
 
 controls.forEach((control) =>
 {
@@ -451,6 +669,11 @@ if (!corePreviewElement)
   throw new Error('Missing core preview selector')
 }
 
+if (!fragmentPreviewElement)
+{
+  throw new Error('Missing fragment preview selector')
+}
+
 const getCorePreviewStageValue = (stage: CorePreviewStage) =>
 {
   if (stage === 'b0')
@@ -476,6 +699,56 @@ const getCorePreviewStageValue = (stage: CorePreviewStage) =>
   return 4
 }
 
+const getFragmentPreviewStageValue = (stage: FragmentPreviewStage) =>
+{
+  if (stage === 'd0')
+  {
+    return 0
+  }
+
+  if (stage === 'd1')
+  {
+    return 1
+  }
+
+  if (stage === 'd2')
+  {
+    return 2
+  }
+
+  if (stage === 'd3')
+  {
+    return 3
+  }
+
+  if (stage === 'd4')
+  {
+    return 4
+  }
+
+  if (stage === 'd5')
+  {
+    return 5
+  }
+
+  if (stage === 'd6')
+  {
+    return 6
+  }
+
+  if (stage === 'd7')
+  {
+    return 7
+  }
+
+  if (stage === 'd8')
+  {
+    return 8
+  }
+
+  return 9
+}
+
 const syncControls = () =>
 {
   controls.forEach(({ key }) =>
@@ -495,14 +768,23 @@ const syncControls = () =>
   uniforms.uRotationSpeedRad.value = config.rotationSpeedDeg * DEG_TO_RAD
   uniforms.uArcColor.value = [config.arcColorR, config.arcColorG, config.arcColorB]
   uniforms.uCompositeScaleParams.value = [config.c1StartScale, config.c1EndScale, config.c1TimeFraction]
+  uniforms.uFragmentScaleCurveParams.value = [config.d6StartScale, config.d6PeakScale, config.d6EndScale, config.d6GrowTimeFraction]
+  uniforms.uFragmentAlphaParams.value = [config.d8AlphaMax, config.d8AlphaMin]
+  uniforms.uFragmentInitScaleParams.value = [config.d9StartScale, config.d9EndScale, config.d9TimeFraction]
+  postUniforms.uPostParams.value = [config.fxBlurRadius, config.fxBlurMix, config.fxBloomIntensity, config.fxScreenMix]
+  postUniforms.uPostBloomThresholds.value = [config.fxBloomThresholdLow, config.fxBloomThresholdHigh]
+  postUniforms.uPostEnabled.value = branchVisibility.filter ? 1 : 0
   uniforms.uCorePreviewStage.value = getCorePreviewStageValue(corePreviewStage)
+  uniforms.uFragmentPreviewStage.value = getFragmentPreviewStageValue(fragmentPreviewStage)
   uniforms.uBranchVisibility.value = [
     branchVisibility.mainArc ? 1 : 0,
     branchVisibility.coreDisk ? 1 : 0,
     branchVisibility.mainFx ? 1 : 0,
+    branchVisibility.fragments ? 1 : 0,
   ]
 
   corePreviewElement.value = corePreviewStage
+  fragmentPreviewElement.value = fragmentPreviewStage
 
   branchDefinitions.forEach(({ key }) =>
   {
@@ -540,6 +822,95 @@ const applyControlConstraints = (changedKey: keyof DebugState) =>
       config.minCount = config.maxCount
     }
   }
+
+  if (config.d3InnerRadius > config.d3OuterRadius)
+  {
+    if (changedKey === 'd3InnerRadius')
+    {
+      config.d3OuterRadius = config.d3InnerRadius
+    } else if (changedKey === 'd3OuterRadius')
+    {
+      config.d3InnerRadius = config.d3OuterRadius
+    }
+  }
+
+  if (config.d5CountMin > config.d5CountMax)
+  {
+    if (changedKey === 'd5CountMin')
+    {
+      config.d5CountMax = config.d5CountMin
+    } else if (changedKey === 'd5CountMax')
+    {
+      config.d5CountMin = config.d5CountMax
+    }
+  }
+
+  if (config.d5SpeedMin > config.d5SpeedMax)
+  {
+    if (changedKey === 'd5SpeedMin')
+    {
+      config.d5SpeedMax = config.d5SpeedMin
+    } else if (changedKey === 'd5SpeedMax')
+    {
+      config.d5SpeedMin = config.d5SpeedMax
+    }
+  }
+
+  if (config.d5LifetimeMin > config.d5LifetimeMax)
+  {
+    if (changedKey === 'd5LifetimeMin')
+    {
+      config.d5LifetimeMax = config.d5LifetimeMin
+    } else if (changedKey === 'd5LifetimeMax')
+    {
+      config.d5LifetimeMin = config.d5LifetimeMax
+    }
+  }
+
+  if (config.d5SizeMin > config.d5SizeMax)
+  {
+    if (changedKey === 'd5SizeMin')
+    {
+      config.d5SizeMax = config.d5SizeMin
+    } else if (changedKey === 'd5SizeMax')
+    {
+      config.d5SizeMin = config.d5SizeMax
+    }
+  }
+
+  if (config.d8AlphaMin > config.d8AlphaMax)
+  {
+    if (changedKey === 'd8AlphaMin')
+    {
+      config.d8AlphaMax = config.d8AlphaMin
+    } else if (changedKey === 'd8AlphaMax')
+    {
+      config.d8AlphaMin = config.d8AlphaMax
+    }
+  }
+
+  if (config.d8FlashPeriodMin > config.d8FlashPeriodMax)
+  {
+    if (changedKey === 'd8FlashPeriodMin')
+    {
+      config.d8FlashPeriodMax = config.d8FlashPeriodMin
+    } else if (changedKey === 'd8FlashPeriodMax')
+    {
+      config.d8FlashPeriodMin = config.d8FlashPeriodMax
+    }
+  }
+
+  if (config.fxBloomThresholdLow > config.fxBloomThresholdHigh)
+  {
+    if (changedKey === 'fxBloomThresholdLow')
+    {
+      config.fxBloomThresholdHigh = config.fxBloomThresholdLow
+    } else if (changedKey === 'fxBloomThresholdHigh')
+    {
+      config.fxBloomThresholdLow = config.fxBloomThresholdHigh
+    }
+  }
+
 }
 
 controls.forEach(({ key }) =>
@@ -595,6 +966,20 @@ const handleCorePreviewChange = () =>
 corePreviewElement.addEventListener('input', handleCorePreviewChange)
 corePreviewElement.addEventListener('change', handleCorePreviewChange)
 
+const handleFragmentPreviewChange = () =>
+{
+  const nextValue = fragmentPreviewElement.value as FragmentPreviewStage
+
+  if (nextValue === 'd0' || nextValue === 'd1' || nextValue === 'd2' || nextValue === 'd3' || nextValue === 'd4' || nextValue === 'd5' || nextValue === 'd6' || nextValue === 'd7' || nextValue === 'd8' || nextValue === 'd9')
+  {
+    fragmentPreviewStage = nextValue
+    syncControls()
+  }
+}
+
+fragmentPreviewElement.addEventListener('input', handleFragmentPreviewChange)
+fragmentPreviewElement.addEventListener('change', handleFragmentPreviewChange)
+
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
 
 const easeInOutSine = (value: number) => -(Math.cos(Math.PI * value) - 1) * 0.5
@@ -623,6 +1008,22 @@ const resetParticle = (particle: ParticleState) =>
   particle.radius = 0
   particle.scaleX = 0
   particle.scaleY = 0
+  particle.enabled = 0
+}
+
+const resetFragmentParticle = (particle: FragmentParticleState) =>
+{
+  particle.startTime = -100
+  particle.lifetime = 0
+  particle.spawnX = 0
+  particle.spawnY = 0
+  particle.dirX = 0
+  particle.dirY = 0
+  particle.speed = 0
+  particle.rotation = 0
+  particle.spriteIndex = 0
+  particle.sizeMultiplier = 1
+  particle.flashPeriod = 0.1
   particle.enabled = 0
 }
 
@@ -706,6 +1107,7 @@ const spawnBurst = (clientX: number, clientY: number) =>
   const originX = clientX / window.innerWidth
   const originY = 1 - clientY / window.innerHeight
   const count = randomIntInclusive(config.minCount, config.maxCount)
+  const fragmentCount = randomIntInclusive(config.d5CountMin, config.d5CountMax)
 
   burst.originX = originX
   burst.originY = originY
@@ -722,6 +1124,10 @@ const spawnBurst = (clientX: number, clientY: number) =>
   burst.b3GrayMultiplier = config.b3GrayMultiplier
   burst.b3AlphaMultiplier = config.b3AlphaMultiplier
   burst.b4Alpha = config.b4Alpha
+  burst.dTriangleSize = config.dTriangleSize
+  burst.d3OuterRadius = config.d3OuterRadius
+  burst.d3InnerRadius = config.d3InnerRadius
+  burst.fragmentDuration = 0
   resetBurstBounds(burst)
 
   for (let particleIndex = 0; particleIndex < PARTICLES_PER_BURST; particleIndex += 1)
@@ -761,6 +1167,39 @@ const spawnBurst = (clientX: number, clientY: number) =>
     particle.startTime = burst.branchAStartTime
   })
 
+  for (let fragmentIndex = 0; fragmentIndex < FRAGMENT_PARTICLES_PER_BURST; fragmentIndex += 1)
+  {
+    const particle = burst.fragmentParticles[fragmentIndex]
+
+    if (fragmentIndex >= fragmentCount)
+    {
+      resetFragmentParticle(particle)
+      continue
+    }
+
+    const angle = randomBetween(0, Math.PI * 2)
+    const inner = burst.d3InnerRadius
+    const outer = Math.max(burst.d3OuterRadius, inner)
+    const radialDistance = Math.sqrt(randomBetween(inner * inner, outer * outer))
+    const spawnX = Math.cos(angle) * radialDistance
+    const spawnY = Math.sin(angle) * radialDistance
+    const directionLength = Math.hypot(spawnX, spawnY) || 1
+
+    particle.startTime = currentTime
+    particle.lifetime = randomBetween(config.d5LifetimeMin, config.d5LifetimeMax)
+    particle.spawnX = spawnX
+    particle.spawnY = spawnY
+    particle.dirX = spawnX / directionLength
+    particle.dirY = spawnY / directionLength
+    particle.speed = randomBetween(config.d5SpeedMin, config.d5SpeedMax)
+    particle.rotation = randomBetween(0, Math.PI * 2)
+    particle.spriteIndex = Math.random() < 0.5 ? 0 : 1
+    particle.sizeMultiplier = randomBetween(config.d5SizeMin, config.d5SizeMax)
+    particle.flashPeriod = randomBetween(config.d8FlashPeriodMin, config.d8FlashPeriodMax)
+    particle.enabled = 1
+    burst.fragmentDuration = Math.max(burst.fragmentDuration, particle.lifetime)
+  }
+
   precomputeBurstBounds(burst)
 }
 
@@ -772,6 +1211,7 @@ const updateBurstActivity = (time: number) =>
       && time >= burst.startTime
       && time <= burst.startTime + burst.duration
     let hasActiveParticle = false
+    let hasActiveFragmentParticle = false
 
     burst.particles.forEach((particle) =>
     {
@@ -789,7 +1229,23 @@ const updateBurstActivity = (time: number) =>
       hasActiveParticle = true
     })
 
-    if (!branchBActive && !hasActiveParticle)
+    burst.fragmentParticles.forEach((particle) =>
+    {
+      if (!particle.enabled || particle.lifetime <= 0)
+      {
+        return
+      }
+
+      const progress = (time - particle.startTime) / particle.lifetime
+      if (progress < 0 || progress > 1)
+      {
+        return
+      }
+
+      hasActiveFragmentParticle = true
+    })
+
+    if (!branchBActive && !hasActiveParticle && !hasActiveFragmentParticle)
     {
       burst.active = 0
       resetBurstBounds(burst)
@@ -822,6 +1278,10 @@ const syncRuntimeUniforms = () =>
     burstCoreToneData[burstBase + 1] = burst.b3AlphaMultiplier
     burstCoreToneData[burstBase + 2] = burst.b4Alpha
     burstCoreToneData[burstBase + 3] = 0
+    burstFragmentData[burstBase] = burst.dTriangleSize
+    burstFragmentData[burstBase + 1] = burst.d3OuterRadius
+    burstFragmentData[burstBase + 2] = burst.d3InnerRadius
+    burstFragmentData[burstBase + 3] = burst.fragmentDuration
 
     burstBounds[burstBase] = burst.bounds.minX
     burstBounds[burstBase + 1] = burst.bounds.maxX
@@ -848,6 +1308,27 @@ const syncRuntimeUniforms = () =>
       slot.c[particleBase + 2] = 0
       slot.c[particleBase + 3] = 0
     })
+
+    burst.fragmentParticles.forEach((particle, particleIndex) =>
+    {
+      const slot = fragmentParticleSlotData[particleIndex]
+      const particleBase = burstIndex * 4
+
+      slot.a[particleBase] = particle.startTime
+      slot.a[particleBase + 1] = particle.lifetime
+      slot.a[particleBase + 2] = particle.speed
+      slot.a[particleBase + 3] = particle.enabled
+
+      slot.b[particleBase] = particle.spawnX
+      slot.b[particleBase + 1] = particle.spawnY
+      slot.b[particleBase + 2] = particle.dirX
+      slot.b[particleBase + 3] = particle.dirY
+
+      slot.c[particleBase] = particle.rotation
+      slot.c[particleBase + 1] = particle.spriteIndex
+      slot.c[particleBase + 2] = particle.sizeMultiplier
+      slot.c[particleBase + 3] = particle.flashPeriod
+    })
   })
 }
 
@@ -865,6 +1346,8 @@ const resize = () =>
 {
   renderer.setSize(window.innerWidth, window.innerHeight)
   uniforms.uResolution.value = [window.innerWidth, window.innerHeight]
+  sceneTarget.setSize(gl.canvas.width, gl.canvas.height)
+  postUniforms.uPostResolution.value = [gl.canvas.width, gl.canvas.height]
 }
 
 window.addEventListener('resize', resize)
@@ -875,7 +1358,8 @@ const render = (time: number) =>
   uniforms.uTime.value = currentTime
   updateBurstActivity(currentTime)
   syncRuntimeUniforms()
-  renderer.render({ scene: mesh })
+  renderer.render({ scene: mesh, target: sceneTarget })
+  renderer.render({ scene: postMesh })
   requestAnimationFrame(render)
 }
 
