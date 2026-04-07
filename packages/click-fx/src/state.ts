@@ -1,6 +1,6 @@
 import { BOUNDS_SAMPLE_COUNT, FRAGMENT_PARTICLES_PER_BURST, MAX_BURSTS, PARTICLES_PER_BURST } from './constants'
 import { easeInOutSine, easeInQuad, randomBetween, randomIntInclusive, randomSigned } from './math'
-import type { BurstState, BurstStore, DebugState, FragmentParticleState, ParticleState } from './types'
+import type { BurstBounds, BurstState, BurstStore, DebugState, FragmentParticleState, ParticleState } from './types'
 
 const createParticleState = (): ParticleState => ({
   startTime: -100,
@@ -92,6 +92,13 @@ const resetBurstBounds = (burst: BurstState) =>
   burst.bounds.minY = 0
   burst.bounds.maxY = 0
 }
+
+const createBounds = (minX = 0, maxX = 0, minY = 0, maxY = 0): BurstBounds => ({
+  minX,
+  maxX,
+  minY,
+  maxY,
+})
 
 const precomputeBurstBounds = (burst: BurstState) =>
 {
@@ -326,3 +333,73 @@ export const updateBurstActivity = (store: BurstStore, time: number) =>
     burst.active = 1
   })
 }
+
+export const hasActiveBursts = (store: BurstStore) => store.bursts.some((burst) => burst.active > 0)
+
+export const getBurstMainFxBounds = (burst: BurstState, config: DebugState): BurstBounds =>
+{
+  const compositeScaleMax = Math.max(config.c1StartScale, config.c1EndScale)
+  const coreScaleMax = Math.max(burst.b2StartScale, burst.b2EndScale)
+  const coreRadius = burst.b1Radius * coreScaleMax * compositeScaleMax
+  const arcOuterRadius = Math.max(
+    Math.abs(config.arcRadius + burst.bounds.minX),
+    Math.abs(config.arcRadius + burst.bounds.maxX)
+  ) * compositeScaleMax
+  const radius = Math.max(coreRadius, arcOuterRadius) * config.effectScale
+
+  return createBounds(-radius, radius, -radius, radius)
+}
+
+export const getBurstFragmentBounds = (burst: BurstState, config: DebugState): BurstBounds =>
+{
+  let maxSpeed = 0
+  let maxSizeMultiplier = 0
+
+  burst.fragmentParticles.forEach((particle) =>
+  {
+    if (!particle.enabled)
+    {
+      return
+    }
+
+    maxSpeed = Math.max(maxSpeed, particle.speed)
+    maxSizeMultiplier = Math.max(maxSizeMultiplier, particle.sizeMultiplier)
+  })
+
+  const d6ScaleMax = Math.max(config.d6StartScale, config.d6PeakScale, config.d6EndScale)
+  const d9ScaleMax = Math.max(config.d9StartScale, config.d9EndScale)
+  const spriteRadius = 0.05 * burst.dTriangleSize * Math.max(maxSizeMultiplier, 1) * d6ScaleMax
+  const centerRadius = burst.d3OuterRadius + maxSpeed
+  const radius = (centerRadius + spriteRadius) * d9ScaleMax * config.effectScale
+
+  return createBounds(-radius, radius, -radius, radius)
+}
+
+export const unionBurstBounds = (...boundsList: BurstBounds[]): BurstBounds =>
+{
+  const validBounds = boundsList.filter((bounds) =>
+    Number.isFinite(bounds.minX)
+    && Number.isFinite(bounds.maxX)
+    && Number.isFinite(bounds.minY)
+    && Number.isFinite(bounds.maxY)
+  )
+
+  if (!validBounds.length)
+  {
+    return createBounds()
+  }
+
+  return createBounds(
+    Math.min(...validBounds.map((bounds) => bounds.minX)),
+    Math.max(...validBounds.map((bounds) => bounds.maxX)),
+    Math.min(...validBounds.map((bounds) => bounds.minY)),
+    Math.max(...validBounds.map((bounds) => bounds.maxY))
+  )
+}
+
+export const expandBurstBounds = (bounds: BurstBounds, padding: number): BurstBounds => createBounds(
+  bounds.minX - padding,
+  bounds.maxX + padding,
+  bounds.minY - padding,
+  bounds.maxY + padding
+)

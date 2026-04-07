@@ -1,19 +1,23 @@
 {
-  "name": "ba-click-effect",
+  "name": "blue-archive-touch-effect-workspace",
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "ogl": "^1.0.11"
+    "dev": "npm run build -w packages/click-fx && npm run dev -w apps/lab",
+    "build": "npm run build -w packages/click-fx && npm run build -w apps/lab",
+    "build:package": "npm run build -w packages/click-fx",
+    "build:lab": "npm run build -w apps/lab",
+    "preview": "npm run preview -w apps/lab",
+    "pack:package": "npm pack -w packages/click-fx"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "vite": "^7.1.5",
+    "vite": "^8.0.5",
     "vite-plugin-glsl": "^1.5.1"
   }
 }

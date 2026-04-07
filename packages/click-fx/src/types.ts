@@ -1,4 +1,6 @@
 export type UniformValue<T> = { value: T }
+export const blendModes = ['normal', 'add', 'screen'] as const
+export type BlendMode = (typeof blendModes)[number]
 
 export type BranchKey = 'mainArc' | 'coreDisk' | 'mainFx' | 'fragments' | 'filter'
 export type StageKey = 'a1' | 'a2' | 'a3' | 'a4' | 'a6' | 'a7' | 'b0' | 'b1' | 'b2' | 'b3' | 'b4' | 'c1' | 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6' | 'd7' | 'd8' | 'd9' | 'fx'
@@ -25,6 +27,9 @@ export type DebugState = {
   arcColorR: number
   arcColorG: number
   arcColorB: number
+  mainArcAlphaMix: number
+  mainArcBlendMode: BlendMode
+  coreDiskBlendMode: BlendMode
   b0Radius: number
   b0Softness: number
   b1Radius: number
@@ -34,9 +39,11 @@ export type DebugState = {
   b3GrayMultiplier: number
   b3AlphaMultiplier: number
   b4Alpha: number
+  coreDiskAlphaMix: number
   c1StartScale: number
   c1EndScale: number
   c1TimeFraction: number
+  effectScale: number
   dTriangleSize: number
   d3OuterRadius: number
   d3InnerRadius: number
@@ -59,12 +66,16 @@ export type DebugState = {
   d9StartScale: number
   d9EndScale: number
   d9TimeFraction: number
+  fragmentsAlphaMix: number
+  fragmentsBlendMode: BlendMode
   fxBlurRadius: number
   fxBlurMix: number
   fxBloomThresholdLow: number
   fxBloomThresholdHigh: number
   fxBloomIntensity: number
   fxScreenMix: number
+  filterBlendMode: BlendMode
+  globalAlpha: number
 }
 
 export type ParticleState = {
@@ -170,3 +181,27 @@ export type PreviewState = {
   fragment: FragmentPreviewStage
 }
 
+export type RuntimeConfig = DebugState
+
+export type RuntimeDebugState = {
+  branchVisibility: BranchVisibility
+  corePreviewStage: CorePreviewStage
+  fragmentPreviewStage: FragmentPreviewStage
+}
+
+export type CreateClickFxOptions = {
+  target: HTMLElement
+  listenTarget?: HTMLElement | Window
+  config?: Partial<RuntimeConfig>
+  pixelRatioCap?: number
+  autoBindPointer?: boolean
+}
+
+export type ClickFxInstance = {
+  canvas: HTMLCanvasElement
+  spawnAtClient: (clientX: number, clientY: number) => void
+  spawnAtLocal: (x: number, y: number) => void
+  updateConfig: (partial: Partial<RuntimeConfig>) => void
+  resize: () => void
+  dispose: () => void
+}
