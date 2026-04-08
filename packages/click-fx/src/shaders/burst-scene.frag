@@ -84,7 +84,7 @@ float easeInQuad(float value) {
 float heightCircle(vec2 point, float radius, float softness) {
   float dist = length(point);
   float normalized = clamp(1.0 - dist / max(radius, 0.0001), 0.0, 1.0);
-  float falloffPower = mix(3.0, 0.65, clamp(softness, 0.0, 1.0));
+  float falloffPower = mix(3.0, 0.45, clamp(softness, 0.0, 1.0));
   return pow(normalized, falloffPower);
 }
 
@@ -393,8 +393,9 @@ void main() {
     float seqValue = heightCircle(vec2(curveDistance, 0.0), uBurstCoreData.x, uBurstCoreData.y);
     float graySeq = seqValue * uBurstCoreToneData.x;
     float alphaSeq = seqValue * uBurstCoreToneData.y;
-    float b3Mask = b2Mask * graySeq * alphaSeq;
-    float b4Mask = b3Mask * uBurstCoreToneData.z;
+    float b3Gray = b2Mask * graySeq;
+    float b3Alpha = b2Mask * alphaSeq;
+    float b4Mask = b3Alpha * uBurstCoreToneData.z;
 
     if (uCorePreviewStage < 0.5) {
       coreColor += vec3(b0Height);
@@ -403,7 +404,7 @@ void main() {
     } else if (uCorePreviewStage < 2.5) {
       coreColor += vec3(b2Mask);
     } else if (uCorePreviewStage < 3.5) {
-      coreColor += vec3(b3Mask);
+      coreColor += vec3(b3Gray);
     } else {
       coreColor += coreDiskBlue * b4Mask;
     }

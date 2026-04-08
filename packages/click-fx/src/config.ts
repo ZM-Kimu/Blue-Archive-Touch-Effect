@@ -16,19 +16,19 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   angleSpanDeg: 360,
   arcRadius: 0.177,
   rotationSpeedDeg: -90,
-  arcColorR: 0.18,
-  arcColorG: 0.87,
+  arcColorR: 0.23,
+  arcColorG: 0.9,
   arcColorB: 1,
   mainArcAlphaMix: 0.85,
   mainArcBlendMode: 'screen',
   b0Radius: 0.18,
-  b0Softness: 1,
+  b0Softness: 0.6,
   b1Radius: 0.175,
   b2StartScale: 0.25,
   b2EndScale: 1,
   b2TimeFraction: 0.3,
-  b3GrayMultiplier: 1.5,
-  b3AlphaMultiplier: 0.73,
+  b3GrayMultiplier: 1.1,
+  b3AlphaMultiplier: 0.81,
   b4Alpha: 1,
   coreDiskAlphaMix: 1,
   coreDiskBlendMode: 'add',
@@ -51,23 +51,23 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   d6PeakScale: 1,
   d6EndScale: 0,
   d6GrowTimeFraction: 0.15,
-  d8AlphaMax: 1,
+  d8AlphaMax: 0.9,
   d8AlphaMin: 0.35,
   d8FlashPeriodMin: 0.08,
   d8FlashPeriodMax: 0.15,
   d9StartScale: 0.85,
   d9EndScale: 1.1,
   d9TimeFraction: 0.3,
-  fragmentsAlphaMix: 0.7,
+  fragmentsAlphaMix: 0.75,
   fragmentsBlendMode: 'add',
-  fxBlurRadius: 1.85,
+  fxBlurRadius: 1.1,
   fxBlurMix: 0.6,
-  fxBloomThresholdLow: 0.1,
-  fxBloomThresholdHigh: 0.74,
-  fxBloomIntensity: 1.61,
+  fxBloomThresholdLow: 0.08,
+  fxBloomThresholdHigh: 0.7,
+  fxBloomIntensity: 2.2,
   fxScreenMix: 1,
-  filterBlendMode: 'screen',
-  globalAlpha: 0.9,
+  filterBlendMode: 'add',
+  globalAlpha: 0.85,
 }
 
 export const applyRuntimeConfigConstraints = (
@@ -95,7 +95,7 @@ export const applyRuntimeConfigConstraints = (
   ensureBlendMode('mainArcBlendMode', 'add')
   ensureBlendMode('coreDiskBlendMode', 'add')
   ensureBlendMode('fragmentsBlendMode', 'add')
-  ensureBlendMode('filterBlendMode', 'screen')
+  ensureBlendMode('filterBlendMode', 'add')
 
   if (config.scaleMin > config.scaleMax)
   {
