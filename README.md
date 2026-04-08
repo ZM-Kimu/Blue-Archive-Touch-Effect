@@ -6,7 +6,6 @@ Monorepo for the publishable click FX runtime and its local lab app.
 
 - `packages/click-fx`: npm package source and build output
 - `apps/lab`: Vite demo app with debug controls
-- `src/legacy`: archived monolithic prototype, not part of the published package
 
 ## Quick Start
 
