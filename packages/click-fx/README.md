@@ -64,6 +64,7 @@ import { createClickFx } from 'blue-archive-touch-effect'
 const fx = createClickFx({
   target: document.body,
   config: {
+    themeColor: { r: 0.23, g: 0.9, b: 1 },
     fxBlurRadius: 1.85,
     fxBloomIntensity: 1.48,
     angleSpanDeg: 360,
@@ -72,10 +73,23 @@ const fx = createClickFx({
 })
 
 fx.updateConfig({
+  themeColor: { r: 1, g: 0.55, b: 0.3 },
   fxScreenMix: 1,
   duration: 0.7,
 })
 ```
+
+`themeColor` is the unified visible color for the arc, core disk, and fragment branches. Update it as a full object:
+
+```ts
+fx.updateConfig({
+  themeColor: { r: 0.4, g: 0.8, b: 1 },
+})
+```
+
+Partial nested updates like `themeColor: { r: 0.5 }` are not part of the supported API.
+
+In `0.2.0`, `themeColor` replaces the older `arcColorR/G/B` public API.
 
 ## API
 

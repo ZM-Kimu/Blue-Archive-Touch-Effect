@@ -16,6 +16,7 @@ import type {
   CorePreviewStage,
   FragmentPreviewStage,
   LabAppearanceState,
+  NumericRuntimeKey,
 } from './types'
 import type { RuntimeConfig } from 'blue-archive-touch-effect'
 
@@ -25,12 +26,14 @@ type DebugPanelOptions = {
   branchVisibility: BranchVisibility
   getCorePreviewStage: () => CorePreviewStage
   getFragmentPreviewStage: () => FragmentPreviewStage
+  getThemeColor: () => RuntimeConfig['themeColor']
   getBackgroundColor: () => LabAppearanceState['backgroundColor']
-  onControlChange: (key: keyof RuntimeConfig, value: number) => void
+  onControlChange: (key: NumericRuntimeKey, value: number) => void
   onSelectChange: (key: BlendModeRuntimeKey, value: RuntimeConfig[BlendModeRuntimeKey]) => void
   onVisibilityChange: (key: BranchKey, value: boolean) => void
   onCorePreviewChange: (value: CorePreviewStage) => void
   onFragmentPreviewChange: (value: FragmentPreviewStage) => void
+  onThemeColorChange: (value: RuntimeConfig['themeColor']) => void
   onBackgroundColorChange: (value: LabAppearanceState['backgroundColor']) => void
 }
 
@@ -46,15 +49,25 @@ export const createDebugPanel = ({
   branchVisibility,
   getCorePreviewStage,
   getFragmentPreviewStage,
+  getThemeColor,
   getBackgroundColor,
   onControlChange,
   onSelectChange,
   onVisibilityChange,
   onCorePreviewChange,
   onFragmentPreviewChange,
+  onThemeColorChange,
   onBackgroundColorChange,
 }: DebugPanelOptions): DebugPanelController =>
 {
+  const toHexChannel = (value: number) =>
+    Math.round(Math.min(1, Math.max(0, value)) * 255)
+      .toString(16)
+      .padStart(2, '0')
+
+  const themeColorToHex = (themeColor: RuntimeConfig['themeColor']) =>
+    `#${toHexChannel(themeColor.r)}${toHexChannel(themeColor.g)}${toHexChannel(themeColor.b)}`
+
   const createControlMarkup = ({ key, label, min, max, step }: (typeof controls)[number]) => `
     <label class="debug-control">
       <span>${label}</span>
@@ -86,6 +99,12 @@ export const createDebugPanel = ({
         <span>${subtitle}</span>
       </div>
       <div class="debug-stage__controls">
+        ${key === 'a7' ? `
+          <label class="debug-color">
+            <span>Theme Color</span>
+            <input data-theme-color type="color" value="${themeColorToHex(getThemeColor())}" />
+          </label>
+        ` : ''}
         ${controls.filter((control) => control.stage === key).map(createControlMarkup).join('')}
         ${selectControls.filter((control) => control.stage === key).map(createSelectMarkup).join('')}
       </div>
@@ -151,7 +170,7 @@ export const createDebugPanel = ({
     <div class="debug-branches">
       ${branchDefinitions.map(createBranchMarkup).join('')}
     </div>
-    <p class="debug-hint">Most generation parameters apply on next click. Visibility, A7 color, C1 controls, filter controls, and preview selectors update immediately.</p>
+    <p class="debug-hint">Most generation parameters apply on next click. Visibility, theme color, C1 controls, filter controls, and preview selectors update immediately.</p>
   `
 
   shell.appendChild(panel)
@@ -162,6 +181,7 @@ export const createDebugPanel = ({
   const visibilityElements = new Map<BranchKey, HTMLInputElement>()
   const corePreviewElement = panel.querySelector<HTMLSelectElement>('select[data-core-preview]')
   const fragmentPreviewElement = panel.querySelector<HTMLSelectElement>('select[data-fragment-preview]')
+  const themeColorElement = panel.querySelector<HTMLInputElement>('input[data-theme-color]')
   const backgroundColorElement = panel.querySelector<HTMLInputElement>('input[data-bg-color]')
 
   controls.forEach((control) =>
@@ -235,6 +255,11 @@ export const createDebugPanel = ({
     throw new Error('Missing fragment preview selector')
   }
 
+  if (!themeColorElement)
+  {
+    throw new Error('Missing theme color control')
+  }
+
   if (!backgroundColorElement)
   {
     throw new Error('Missing background color control')
@@ -260,6 +285,18 @@ export const createDebugPanel = ({
   corePreviewElement.addEventListener('change', handleCorePreviewChange)
   fragmentPreviewElement.addEventListener('input', handleFragmentPreviewChange)
   fragmentPreviewElement.addEventListener('change', handleFragmentPreviewChange)
+  const handleThemeColorChange = () =>
+  {
+    const hex = themeColorElement.value
+    const parseChannel = (start: number) => Number.parseInt(hex.slice(start, start + 2), 16) / 255
+    onThemeColorChange({
+      r: parseChannel(1),
+      g: parseChannel(3),
+      b: parseChannel(5),
+    })
+  }
+  themeColorElement.addEventListener('input', handleThemeColorChange)
+  themeColorElement.addEventListener('change', handleThemeColorChange)
   backgroundColorElement.addEventListener('input', () => onBackgroundColorChange(backgroundColorElement.value))
   backgroundColorElement.addEventListener('change', () => onBackgroundColorChange(backgroundColorElement.value))
 
@@ -292,6 +329,7 @@ export const createDebugPanel = ({
 
     corePreviewElement.value = getCorePreviewStage()
     fragmentPreviewElement.value = getFragmentPreviewStage()
+    themeColorElement.value = themeColorToHex(getThemeColor())
     backgroundColorElement.value = getBackgroundColor()
 
     branchDefinitions.forEach(({ key }) =>

@@ -62,6 +62,18 @@ const defaultRuntimeDebugState = (): RuntimeDebugState => ({
 const getBlendModeValue = (mode: BlendMode) =>
   mode === 'normal' ? 0 : mode === 'add' ? 1 : 2
 
+const getThemeColorValue = (config: RuntimeConfig) => [
+  config.themeColor.r,
+  config.themeColor.g,
+  config.themeColor.b,
+]
+
+const getFragmentHighlightColorValue = (config: RuntimeConfig) => [
+  Math.min(1, config.themeColor.r * 1.2),
+  Math.min(1, config.themeColor.g * 1.2),
+  Math.min(1, config.themeColor.b * 1.2),
+]
+
 const createSceneUniforms = (config: RuntimeConfig, debugState: RuntimeDebugState): UniformBag => ({
   uTime: { value: 0 },
   uLocalBounds: { value: [-1, 1, -1, 1] },
@@ -71,7 +83,8 @@ const createSceneUniforms = (config: RuntimeConfig, debugState: RuntimeDebugStat
   uBurstCoreToneData: { value: [1, 1, 1, 0] },
   uBurstFragmentData: { value: [0.53, 0.203, 0.098, 0] },
   uArcData: { value: [config.angleSpanDeg * Math.PI / 180, config.arcRadius, config.rotationSpeedDeg * Math.PI / 180, 0] },
-  uArcColor: { value: [config.arcColorR, config.arcColorG, config.arcColorB] },
+  uThemeColor: { value: getThemeColorValue(config) },
+  uFragmentHighlightColor: { value: getFragmentHighlightColorValue(config) },
   uBranchAlphaMix: { value: [config.mainArcAlphaMix, config.coreDiskAlphaMix, config.fragmentsAlphaMix] },
   uBranchBlendModes: { value: [getBlendModeValue(config.mainArcBlendMode), getBlendModeValue(config.coreDiskBlendMode), getBlendModeValue(config.fragmentsBlendMode)] },
   uCompositeScaleParams: { value: [config.c1StartScale, config.c1EndScale, config.c1TimeFraction] },
@@ -173,7 +186,18 @@ const mergeConfig = (config: RuntimeConfig, partial: Partial<RuntimeConfig>) =>
       return
     }
 
-    ;(config as Record<keyof RuntimeConfig, RuntimeConfig[keyof RuntimeConfig]>)[configKey] = value
+    if (configKey === 'themeColor')
+    {
+      const themeColor = value as Partial<RuntimeConfig['themeColor']>
+      config.themeColor = {
+        ...config.themeColor,
+        ...themeColor,
+      }
+    } else
+    {
+      ;(config as Record<keyof RuntimeConfig, RuntimeConfig[keyof RuntimeConfig]>)[configKey] = value
+    }
+
     applyRuntimeConfigConstraints(config, configKey)
   })
 }
@@ -264,7 +288,8 @@ const syncSceneStaticUniforms = (
 ) =>
 {
   uniforms.uArcData.value = [config.angleSpanDeg * Math.PI / 180, config.arcRadius, config.rotationSpeedDeg * Math.PI / 180, 0]
-  uniforms.uArcColor.value = [config.arcColorR, config.arcColorG, config.arcColorB]
+  uniforms.uThemeColor.value = getThemeColorValue(config)
+  uniforms.uFragmentHighlightColor.value = getFragmentHighlightColorValue(config)
   uniforms.uBranchAlphaMix.value = [config.mainArcAlphaMix, config.coreDiskAlphaMix, config.fragmentsAlphaMix]
   uniforms.uBranchBlendModes.value = [getBlendModeValue(config.mainArcBlendMode), getBlendModeValue(config.coreDiskBlendMode), getBlendModeValue(config.fragmentsBlendMode)]
   uniforms.uCompositeScaleParams.value = [config.c1StartScale, config.c1EndScale, config.c1TimeFraction]
@@ -357,7 +382,18 @@ export const createClickFx = ({
   autoBindPointer = true,
 }: CreateClickFxOptions): ClickFxInstance =>
 {
-  const config: RuntimeConfig = { ...defaultRuntimeConfig, ...initialConfig }
+  const config: RuntimeConfig = {
+    ...defaultRuntimeConfig,
+    ...initialConfig,
+    themeColor: {
+      ...defaultRuntimeConfig.themeColor,
+      ...(initialConfig?.themeColor ?? {}),
+    },
+  }
+  ;(Object.keys(config) as Array<keyof RuntimeConfig>).forEach((configKey) =>
+  {
+    applyRuntimeConfigConstraints(config, configKey)
+  })
   const debugState: RuntimeDebugState = defaultRuntimeDebugState()
   const burstStore = createBurstStore()
   const renderer = new Renderer({

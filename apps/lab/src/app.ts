@@ -18,6 +18,7 @@ import type {
   FragmentPreviewStage,
   LabAppearanceState,
   LabRuntimeDebugState,
+  NumericRuntimeKey,
 } from './types'
 
 type LabClickFxInstance = ClickFxInstance & {
@@ -47,8 +48,9 @@ export const bootstrapClickFx = () =>
     branchVisibility,
     getCorePreviewStage: () => corePreviewStage,
     getFragmentPreviewStage: () => fragmentPreviewStage,
+    getThemeColor: () => config.themeColor,
     getBackgroundColor: () => appearance.backgroundColor,
-    onControlChange: (key, value) =>
+    onControlChange: (key: NumericRuntimeKey, value) =>
     {
       config[key] = value
       applyRuntimeConfigConstraints(config, key)
@@ -73,6 +75,12 @@ export const bootstrapClickFx = () =>
     onFragmentPreviewChange: (value) =>
     {
       fragmentPreviewStage = value
+      syncControls()
+    },
+    onThemeColorChange: (value) =>
+    {
+      config.themeColor = value
+      applyRuntimeConfigConstraints(config, 'themeColor')
       syncControls()
     },
     onBackgroundColorChange: (value) =>

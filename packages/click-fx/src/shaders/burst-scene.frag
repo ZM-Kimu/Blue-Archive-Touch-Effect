@@ -8,7 +8,8 @@ uniform vec4 uBurstCoreAnimData;
 uniform vec4 uBurstCoreToneData;
 uniform vec4 uBurstFragmentData;
 uniform vec4 uArcData;
-uniform vec3 uArcColor;
+uniform vec3 uThemeColor;
+uniform vec3 uFragmentHighlightColor;
 uniform vec3 uBranchAlphaMix;
 uniform vec3 uBranchBlendModes;
 uniform vec3 uCompositeScaleParams;
@@ -312,6 +313,14 @@ vec3 blendLayer(vec3 dst, vec3 src, float alpha, float mode) {
   return mix(dst, screenBlend(clamp(dst, 0.0, 1.0), clampedSrc), mixAlpha);
 }
 
+vec3 fragmentThemeColor(vec4 particleA, float time) {
+  return mix(
+    clamp(uFragmentHighlightColor, 0.0, 1.0),
+    clamp(uThemeColor, 0.0, 1.0),
+    fragmentColorProgress(particleA, time)
+  );
+}
+
 void accumulateFragmentColor(
   inout vec3 color,
   vec2 point,
@@ -334,8 +343,7 @@ void accumulateFragmentColor(
     return;
   }
 
-  vec3 targetColor = vec3(0.45882353, 0.88627451, 1.0);
-  color += mix(vec3(1.0), targetColor, fragmentColorProgress(particleA, uTime))
+  color += fragmentThemeColor(particleA, uTime)
     * fragmentAlphaValue(particleA, particleC, uTime)
     * particleMask;
 }
@@ -373,7 +381,6 @@ void main() {
   vec3 coreColor = vec3(0.0);
   vec3 fragmentColor = vec3(0.0);
   float arcIntensity = 0.0;
-  vec3 coreDiskBlue = vec3(0.30980393, 0.71764708, 1.0);
 
   float compositeEnd = uBurstTiming.y + uBurstTiming.z;
   float compositeDuration = max(compositeEnd - uBurstTiming.x, 0.0001);
@@ -406,7 +413,7 @@ void main() {
     } else if (uCorePreviewStage < 3.5) {
       coreColor += vec3(b3Gray);
     } else {
-      coreColor += coreDiskBlue * b4Mask;
+      coreColor += clamp(uThemeColor, 0.0, 1.0) * b4Mask;
     }
   }
 
@@ -437,25 +444,25 @@ void main() {
       fragmentMask = accumulateFragmentMask(effectLocal, uBurstFragmentData.x, 1.0);
     } else if (uFragmentPreviewStage < 7.5) {
       float particleMask = sampleFragmentParticle(uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA0, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA0, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA1, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA1, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA2, uFragmentParticleB2, uFragmentParticleC2, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA2, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA2, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA3, uFragmentParticleB3, uFragmentParticleC3, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA3, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA3, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA4, uFragmentParticleB4, uFragmentParticleC4, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA4, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA4, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA5, uFragmentParticleB5, uFragmentParticleC5, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA5, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA5, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA6, uFragmentParticleB6, uFragmentParticleC6, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA6, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA6, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA7, uFragmentParticleB7, uFragmentParticleC7, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA7, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA7, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA8, uFragmentParticleB8, uFragmentParticleC8, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA8, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA8, uTime) * particleMask;
       particleMask = sampleFragmentParticle(uFragmentParticleA9, uFragmentParticleB9, uFragmentParticleC9, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += mix(vec3(1.0), vec3(0.45882353, 0.88627451, 1.0), fragmentColorProgress(uFragmentParticleA9, uTime)) * particleMask;
+      fragmentColor += fragmentThemeColor(uFragmentParticleA9, uTime) * particleMask;
     } else if (uFragmentPreviewStage < 8.5) {
       accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0, 1.0);
       accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1, 1.0);
@@ -517,7 +524,7 @@ void main() {
     coreDiskVisible * uBranchAlphaMix.y,
     uBranchBlendModes.y
   );
-  vec3 arcLayer = clamp(uArcColor * arcIntensity, 0.0, 1.0);
+  vec3 arcLayer = clamp(uThemeColor * arcIntensity, 0.0, 1.0);
   vec3 fragmentLayer = clamp(fragmentColor, 0.0, 1.0);
   vec3 mainFxColor = coreLayer;
 

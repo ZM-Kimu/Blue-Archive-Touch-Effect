@@ -35,6 +35,14 @@ const fx = createClickFx({ target: host })
 
 The runtime attaches a transparent overlay canvas to the target container and renders local burst regions only.
 
+You can recolor the full visible effect through one runtime field:
+
+```ts
+fx.updateConfig({
+  themeColor: { r: 0.23, g: 0.9, b: 1 },
+})
+```
+
 ## Public API
 
 - `createClickFx({ target, listenTarget, config, pixelRatioCap, autoBindPointer })`

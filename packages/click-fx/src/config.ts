@@ -16,9 +16,11 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   angleSpanDeg: 360,
   arcRadius: 0.177,
   rotationSpeedDeg: -90,
-  arcColorR: 0.23,
-  arcColorG: 0.9,
-  arcColorB: 1,
+  themeColor: {
+    r: 0.23,
+    g: 0.9,
+    b: 1,
+  },
   mainArcAlphaMix: 0.85,
   mainArcBlendMode: 'screen',
   b0Radius: 0.18,
@@ -76,6 +78,8 @@ export const applyRuntimeConfigConstraints = (
 ) =>
 {
   const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+  const normalizeThemeChannel = (value: number | undefined, fallback: number) =>
+    Number.isFinite(value) ? clamp01(value as number) : fallback
   const ensureBlendMode = (
     key: 'mainArcBlendMode' | 'coreDiskBlendMode' | 'fragmentsBlendMode' | 'filterBlendMode',
     fallback: RuntimeConfig[typeof key]
@@ -92,6 +96,11 @@ export const applyRuntimeConfigConstraints = (
   config.fragmentsAlphaMix = clamp01(config.fragmentsAlphaMix)
   config.fxScreenMix = clamp01(config.fxScreenMix)
   config.globalAlpha = clamp01(config.globalAlpha)
+  config.themeColor = {
+    r: normalizeThemeChannel(config.themeColor?.r, defaultRuntimeConfig.themeColor.r),
+    g: normalizeThemeChannel(config.themeColor?.g, defaultRuntimeConfig.themeColor.g),
+    b: normalizeThemeChannel(config.themeColor?.b, defaultRuntimeConfig.themeColor.b),
+  }
   ensureBlendMode('mainArcBlendMode', 'add')
   ensureBlendMode('coreDiskBlendMode', 'add')
   ensureBlendMode('fragmentsBlendMode', 'add')

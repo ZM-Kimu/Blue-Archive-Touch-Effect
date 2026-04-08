@@ -9,6 +9,12 @@ export type FragmentPreviewStage = 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6
 
 export type BranchVisibility = Record<BranchKey, boolean>
 
+export type ThemeColor = {
+  r: number
+  g: number
+  b: number
+}
+
 export type DebugState = {
   radius: number
   scaleX: number
@@ -24,9 +30,7 @@ export type DebugState = {
   angleSpanDeg: number
   arcRadius: number
   rotationSpeedDeg: number
-  arcColorR: number
-  arcColorG: number
-  arcColorB: number
+  themeColor: ThemeColor
   mainArcAlphaMix: number
   mainArcBlendMode: BlendMode
   coreDiskBlendMode: BlendMode
