@@ -92,7 +92,13 @@ jobs:
         run: npm pack -w packages/click-fx
 
       - name: Publish to npm
-        run: npm publish -w packages/click-fx --tag "${{ steps.dist-tag.outputs.value }}" --provenance
+        shell: bash
+        run: |
+          if [ "${{ github.event.repository.private }}" = "true" ]; then
+            npm publish -w packages/click-fx --tag "${{ steps.dist-tag.outputs.value }}"
+          else
+            npm publish -w packages/click-fx --tag "${{ steps.dist-tag.outputs.value }}" --provenance
+          fi
 
       - name: Extract release notes
         if: startsWith(github.ref, 'refs/tags/v')
