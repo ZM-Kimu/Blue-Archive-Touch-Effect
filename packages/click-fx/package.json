@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ZM-Kimu/Blue-Archive-Click-Effect.git"
+    "url": "git+https://github.com/ZM-Kimu/Blue-Archive-Touch-Effect.git"
   },
-  "homepage": "https://github.com/ZM-Kimu/Blue-Archive-Click-Effect#readme",
+  "homepage": "https://github.com/ZM-Kimu/Blue-Archive-Touch-Effect#readme",
   "bugs": {
-    "url": "https://github.com/ZM-Kimu/Blue-Archive-Click-Effect/issues"
+    "url": "https://github.com/ZM-Kimu/Blue-Archive-Touch-Effect/issues"
   },
   "type": "module",
   "main": "./dist/index.cjs",
