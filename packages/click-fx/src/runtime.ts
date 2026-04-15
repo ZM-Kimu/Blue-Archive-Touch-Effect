@@ -14,7 +14,6 @@ import {
   updateBurstActivity,
 } from './state'
 import type {
-  BlendMode,
   BurstBounds,
   BurstState,
   ClickFxInstance,
@@ -51,21 +50,31 @@ const defaultRuntimeDebugState = (): RuntimeDebugState => ({
   branchVisibility: {
     mainArc: true,
     coreDisk: true,
-    mainFx: true,
-    fragments: true,
-    filter: true,
+  mainFx: true,
+  fragments: true,
+  filter: true,
   },
-  corePreviewStage: 'b4',
+  mainArcPreviewStage: 'a7',
+  corePreviewStage: 'bFinal',
   fragmentPreviewStage: 'd8',
 })
 
-const getBlendModeValue = (mode: BlendMode) =>
-  mode === 'normal' ? 0 : mode === 'add' ? 1 : 2
+const getFinalMixerModeValue = (mode: RuntimeConfig['finalMixerMode']) =>
+  mode === 'normalized' ? 0 : mode === 'add' ? 1 : mode === 'screen' ? 2 : 3
+
+const getTonemappingModeValue = (mode: RuntimeConfig['fxTonemappingMode']) =>
+  mode === 'none' ? 0 : mode === 'neutral' ? 1 : 2
 
 const getThemeColorValue = (config: RuntimeConfig) => [
   config.themeColor.r,
   config.themeColor.g,
   config.themeColor.b,
+]
+
+const getCoreDiskColorValue = (config: RuntimeConfig) => [
+  config.coreDiskColor.r,
+  config.coreDiskColor.g,
+  config.coreDiskColor.b,
 ]
 
 const getFragmentHighlightColorValue = (config: RuntimeConfig) => [
@@ -79,20 +88,22 @@ const createSceneUniforms = (config: RuntimeConfig, debugState: RuntimeDebugStat
   uLocalBounds: { value: [-1, 1, -1, 1] },
   uBurstTiming: { value: [0, 0, 0, 0] },
   uBurstCoreData: { value: [0, 1, 0, 0] },
-  uBurstCoreAnimData: { value: [0.25, 1, 0.5, 0] },
-  uBurstCoreToneData: { value: [1, 1, 1, 0] },
+  uBurstCoreAnimData: { value: [0.25, 1, 0.3, 0] },
+  uBurstCoreToneData: { value: [1, 0, 0.3, 0] },
   uBurstFragmentData: { value: [0.53, 0.203, 0.098, 0] },
   uArcData: { value: [config.angleSpanDeg * Math.PI / 180, config.arcRadius, config.rotationSpeedDeg * Math.PI / 180, 0] },
   uThemeColor: { value: getThemeColorValue(config) },
+  uCoreDiskColor: { value: getCoreDiskColorValue(config) },
   uFragmentHighlightColor: { value: getFragmentHighlightColorValue(config) },
-  uBranchAlphaMix: { value: [config.mainArcAlphaMix, config.coreDiskAlphaMix, config.fragmentsAlphaMix] },
-  uBranchBlendModes: { value: [getBlendModeValue(config.mainArcBlendMode), getBlendModeValue(config.coreDiskBlendMode), getBlendModeValue(config.fragmentsBlendMode)] },
   uCompositeScaleParams: { value: [config.c1StartScale, config.c1EndScale, config.c1TimeFraction] },
+  uFinalMixerWeights: { value: [config.mainArcWeight, config.coreDiskWeight, config.fragmentsWeight] },
+  uFinalMixerParams: { value: [getFinalMixerModeValue(config.finalMixerMode), config.finalMixerGain] },
   uEffectScale: { value: config.effectScale },
   uFragmentScaleCurveParams: { value: [config.d6StartScale, config.d6PeakScale, config.d6EndScale, config.d6GrowTimeFraction] },
   uFragmentAlphaParams: { value: [config.d8AlphaMax, config.d8AlphaMin] },
   uFragmentInitScaleParams: { value: [config.d9StartScale, config.d9EndScale, config.d9TimeFraction] },
-  uCorePreviewStage: { value: 4 },
+  uMainArcPreviewStage: { value: 4 },
+  uCorePreviewStage: { value: 3 },
   uFragmentPreviewStage: { value: 8 },
   uBranchVisibility: { value: [1, 1, 1, 1] },
   uArcSourceBounds: { value: [0, 0, 0, 0] },
@@ -141,11 +152,8 @@ const createFilterUniforms = (config: RuntimeConfig): UniformBag => ({
   uSceneTexture: { value: null },
   uSceneUvScale: { value: [1, 1] },
   uSceneTexel: { value: [1, 1] },
-  uPostParams: { value: [config.fxBlurRadius, config.fxBlurMix, config.fxBloomIntensity, config.fxScreenMix] },
-  uPostBloomThresholds: { value: [config.fxBloomThresholdLow, config.fxBloomThresholdHigh] },
-  uPostBlendMode: { value: getBlendModeValue(config.filterBlendMode) },
-  uPostGlobalAlpha: { value: config.globalAlpha },
-  uPostEnabled: { value: 1 },
+  uPostBloomParams: { value: [config.fxBloomThreshold, config.fxBloomIntensity, config.fxBloomScatter, 1] },
+  uPostTonemappingMode: { value: getTonemappingModeValue(config.fxTonemappingMode) },
 })
 
 const setCanvasStyles = (canvas: HTMLCanvasElement) =>
@@ -186,13 +194,14 @@ const mergeConfig = (config: RuntimeConfig, partial: Partial<RuntimeConfig>) =>
       return
     }
 
-    if (configKey === 'themeColor')
+    if (configKey === 'themeColor' || configKey === 'coreDiskColor')
     {
-      const themeColor = value as Partial<RuntimeConfig['themeColor']>
-      config.themeColor = {
-        ...config.themeColor,
-        ...themeColor,
-      }
+      const colorKey = configKey as 'themeColor' | 'coreDiskColor'
+      const colorValue = value as Partial<RuntimeConfig['themeColor']>
+      config[colorKey] = {
+        ...config[colorKey],
+        ...colorValue,
+      } as RuntimeConfig[typeof colorKey]
     } else
     {
       ;(config as Record<keyof RuntimeConfig, RuntimeConfig[keyof RuntimeConfig]>)[configKey] = value
@@ -203,7 +212,7 @@ const mergeConfig = (config: RuntimeConfig, partial: Partial<RuntimeConfig>) =>
 }
 
 const getFilterPaddingCss = (config: RuntimeConfig) =>
-  10 + config.fxBlurRadius * 18 + config.fxBloomIntensity * 12
+  10 + config.fxBloomScatter * 28 + config.fxBloomIntensity * 12
 
 const getBurstRenderRect = (
   burst: BurstState,
@@ -289,20 +298,26 @@ const syncSceneStaticUniforms = (
 {
   uniforms.uArcData.value = [config.angleSpanDeg * Math.PI / 180, config.arcRadius, config.rotationSpeedDeg * Math.PI / 180, 0]
   uniforms.uThemeColor.value = getThemeColorValue(config)
+  uniforms.uCoreDiskColor.value = getCoreDiskColorValue(config)
   uniforms.uFragmentHighlightColor.value = getFragmentHighlightColorValue(config)
-  uniforms.uBranchAlphaMix.value = [config.mainArcAlphaMix, config.coreDiskAlphaMix, config.fragmentsAlphaMix]
-  uniforms.uBranchBlendModes.value = [getBlendModeValue(config.mainArcBlendMode), getBlendModeValue(config.coreDiskBlendMode), getBlendModeValue(config.fragmentsBlendMode)]
   uniforms.uCompositeScaleParams.value = [config.c1StartScale, config.c1EndScale, config.c1TimeFraction]
+  uniforms.uFinalMixerWeights.value = [config.mainArcWeight, config.coreDiskWeight, config.fragmentsWeight]
+  uniforms.uFinalMixerParams.value = [getFinalMixerModeValue(config.finalMixerMode), config.finalMixerGain]
   uniforms.uEffectScale.value = config.effectScale
   uniforms.uFragmentScaleCurveParams.value = [config.d6StartScale, config.d6PeakScale, config.d6EndScale, config.d6GrowTimeFraction]
   uniforms.uFragmentAlphaParams.value = [config.d8AlphaMax, config.d8AlphaMin]
   uniforms.uFragmentInitScaleParams.value = [config.d9StartScale, config.d9EndScale, config.d9TimeFraction]
-  uniforms.uCorePreviewStage.value =
-    debugState.corePreviewStage === 'b0' ? 0
-      : debugState.corePreviewStage === 'b1' ? 1
-        : debugState.corePreviewStage === 'b2' ? 2
-          : debugState.corePreviewStage === 'b3' ? 3
+  uniforms.uMainArcPreviewStage.value =
+    debugState.mainArcPreviewStage === 'a1' ? 0
+      : debugState.mainArcPreviewStage === 'a3' ? 1
+        : debugState.mainArcPreviewStage === 'a4' ? 2
+          : debugState.mainArcPreviewStage === 'a6' ? 3
             : 4
+  uniforms.uCorePreviewStage.value =
+    debugState.corePreviewStage === 'bBase' ? 0
+      : debugState.corePreviewStage === 'bScale' ? 1
+        : debugState.corePreviewStage === 'bAlpha' ? 2
+          : 3
   uniforms.uFragmentPreviewStage.value =
     debugState.fragmentPreviewStage === 'd0' ? 0
       : debugState.fragmentPreviewStage === 'd1' ? 1
@@ -312,7 +327,7 @@ const syncSceneStaticUniforms = (
               : debugState.fragmentPreviewStage === 'd5' ? 5
                 : debugState.fragmentPreviewStage === 'd6' ? 6
                   : debugState.fragmentPreviewStage === 'd7' ? 7
-                    : debugState.fragmentPreviewStage === 'd8' ? 8
+                : debugState.fragmentPreviewStage === 'd8' ? 8
                       : 9
   uniforms.uBranchVisibility.value = [
     debugState.branchVisibility.mainArc ? 1 : 0,
@@ -336,11 +351,8 @@ const syncFilterUniforms = (
   uniforms.uSceneTexture.value = texture
   uniforms.uSceneUvScale.value = [textureScaleX, textureScaleY]
   uniforms.uSceneTexel.value = [texelX, texelY]
-  uniforms.uPostParams.value = [config.fxBlurRadius, config.fxBlurMix, config.fxBloomIntensity, config.fxScreenMix]
-  uniforms.uPostBloomThresholds.value = [config.fxBloomThresholdLow, config.fxBloomThresholdHigh]
-  uniforms.uPostBlendMode.value = getBlendModeValue(config.filterBlendMode)
-  uniforms.uPostGlobalAlpha.value = config.globalAlpha
-  uniforms.uPostEnabled.value = filterEnabled ? 1 : 0
+  uniforms.uPostBloomParams.value = [config.fxBloomThreshold, config.fxBloomIntensity, config.fxBloomScatter, filterEnabled ? 1 : 0]
+  uniforms.uPostTonemappingMode.value = getTonemappingModeValue(config.fxTonemappingMode)
 }
 
 const syncBurstUniforms = (
@@ -353,9 +365,9 @@ const syncBurstUniforms = (
   uniforms.uTime.value = time
   uniforms.uLocalBounds.value = [rect.localBounds.minX, rect.localBounds.maxX, rect.localBounds.minY, rect.localBounds.maxY]
   uniforms.uBurstTiming.value = [burst.startTime, burst.branchAStartTime, burst.duration, burst.fragmentDuration]
-  uniforms.uBurstCoreData.value = [burst.b0Radius, burst.b0Softness, burst.b1Radius, 0]
-  uniforms.uBurstCoreAnimData.value = [burst.b2StartScale, burst.b2EndScale, burst.b2TimeFraction, 0]
-  uniforms.uBurstCoreToneData.value = [burst.b3GrayMultiplier, burst.b3AlphaMultiplier, burst.b4Alpha, 0]
+  uniforms.uBurstCoreData.value = [burst.coreDiskRadius, burst.coreDiskSoftness, 0, 0]
+  uniforms.uBurstCoreAnimData.value = [burst.coreDiskScaleStart, burst.coreDiskScaleEnd, burst.coreDiskScaleTimeFraction, burst.arcInitialAngle]
+  uniforms.uBurstCoreToneData.value = [burst.coreDiskAlphaStart, burst.coreDiskAlphaEnd, burst.coreDiskAlphaFadeStartFraction, 0]
   uniforms.uBurstFragmentData.value = [burst.dTriangleSize, burst.d3OuterRadius, burst.d3InnerRadius, 0]
   uniforms.uArcSourceBounds.value = [burst.bounds.minX, burst.bounds.maxX, burst.bounds.minY, burst.bounds.maxY]
 
@@ -388,6 +400,10 @@ export const createClickFx = ({
     themeColor: {
       ...defaultRuntimeConfig.themeColor,
       ...(initialConfig?.themeColor ?? {}),
+    },
+    coreDiskColor: {
+      ...defaultRuntimeConfig.coreDiskColor,
+      ...(initialConfig?.coreDiskColor ?? {}),
     },
   }
   ;(Object.keys(config) as Array<keyof RuntimeConfig>).forEach((configKey) =>
@@ -606,6 +622,11 @@ export const createClickFx = ({
     if (partial.corePreviewStage)
     {
       debugState.corePreviewStage = partial.corePreviewStage
+    }
+
+    if (partial.mainArcPreviewStage)
+    {
+      debugState.mainArcPreviewStage = partial.mainArcPreviewStage
     }
 
     if (partial.fragmentPreviewStage)

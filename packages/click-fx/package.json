@@ -1,7 +1,7 @@
 {
   "name": "blue-archive-touch-effect",
   "version": "0.2.0",
-  "description": "Attachable Blue Archive-inspired click FX runtime for the browser.",
+  "description": "Blue Archive touch FX runtime for the web.",
   "license": "MIT",
   "repository": {
     "type": "git",

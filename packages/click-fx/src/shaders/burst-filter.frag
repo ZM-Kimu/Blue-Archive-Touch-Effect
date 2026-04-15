@@ -3,11 +3,8 @@ precision highp float;
 uniform sampler2D uSceneTexture;
 uniform vec2 uSceneUvScale;
 uniform vec2 uSceneTexel;
-uniform vec4 uPostParams;
-uniform vec2 uPostBloomThresholds;
-uniform float uPostBlendMode;
-uniform float uPostGlobalAlpha;
-uniform float uPostEnabled;
+uniform vec4 uPostBloomParams;
+uniform float uPostTonemappingMode;
 
 varying vec2 vUv;
 
@@ -16,68 +13,82 @@ vec4 sampleScene(vec2 uv) {
   return texture2D(uSceneTexture, scaledUv);
 }
 
-vec3 screenBlend(vec3 base, vec3 blend) {
-  return 1.0 - (1.0 - base) * (1.0 - blend);
+float luminance(vec3 color) {
+  return dot(color, vec3(0.2126, 0.7152, 0.0722));
 }
 
-vec3 blendLayer(vec3 dst, vec3 src, float alpha, float mode) {
-  float mixAlpha = clamp(alpha, 0.0, 1.0);
-  vec3 clampedSrc = clamp(src, 0.0, 1.0);
+vec3 brightPass(vec3 color, float threshold) {
+  float softStart = max(0.0, threshold - 0.35);
+  float mask = smoothstep(softStart, max(threshold, softStart + 0.001), luminance(color));
+  return color * mask;
+}
 
+vec4 blurBloom(float radius, float threshold) {
+  vec2 texel = uSceneTexel * radius;
+  vec4 center = sampleScene(vUv);
+  vec4 color = vec4(brightPass(center.rgb, threshold), center.a) * 0.24;
+
+  vec4 tap = sampleScene(vUv + vec2(texel.x, 0.0));
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.12;
+  tap = sampleScene(vUv - vec2(texel.x, 0.0));
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.12;
+  tap = sampleScene(vUv + vec2(0.0, texel.y));
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.12;
+  tap = sampleScene(vUv - vec2(0.0, texel.y));
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.12;
+  tap = sampleScene(vUv + texel);
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.07;
+  tap = sampleScene(vUv - texel);
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.07;
+  tap = sampleScene(vUv + vec2(texel.x, -texel.y));
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.07;
+  tap = sampleScene(vUv + vec2(-texel.x, texel.y));
+  color += vec4(brightPass(tap.rgb, threshold), tap.a) * 0.07;
+
+  return color;
+}
+
+vec3 tonemapNeutral(vec3 color) {
+  return color / (1.0 + color);
+}
+
+vec3 tonemapAces(vec3 color) {
+  vec3 mapped = (color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14);
+  return clamp(mapped, 0.0, 1.0);
+}
+
+vec3 applyTonemapping(vec3 color, float mode) {
   if (mode < 0.5) {
-    return mix(dst, clampedSrc, mixAlpha);
+    return clamp(color, 0.0, 1.0);
   }
 
   if (mode < 1.5) {
-    return dst + clampedSrc * mixAlpha;
+    return clamp(tonemapNeutral(max(color, vec3(0.0))), 0.0, 1.0);
   }
 
-  return mix(dst, screenBlend(clamp(dst, 0.0, 1.0), clampedSrc), mixAlpha);
-}
-
-vec3 brightPass(vec3 color) {
-  float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  float threshold = smoothstep(uPostBloomThresholds.x, uPostBloomThresholds.y, luminance);
-  return color * threshold;
-}
-
-vec4 blurSample(float radius) {
-  vec2 texel = uSceneTexel * radius;
-  vec4 color = sampleScene(vUv) * 0.24;
-  color += sampleScene(vUv + vec2(texel.x, 0.0)) * 0.12;
-  color += sampleScene(vUv - vec2(texel.x, 0.0)) * 0.12;
-  color += sampleScene(vUv + vec2(0.0, texel.y)) * 0.12;
-  color += sampleScene(vUv - vec2(0.0, texel.y)) * 0.12;
-  color += sampleScene(vUv + texel) * 0.07;
-  color += sampleScene(vUv - texel) * 0.07;
-  color += sampleScene(vUv + vec2(texel.x, -texel.y)) * 0.07;
-  color += sampleScene(vUv + vec2(-texel.x, texel.y)) * 0.07;
-  return color;
+  return tonemapAces(max(color, vec3(0.0)));
 }
 
 void main() {
   vec4 base = sampleScene(vUv);
+  float enabled = uPostBloomParams.w;
 
-  if (uPostEnabled < 0.5) {
+  if (enabled < 0.5) {
     gl_FragColor = base;
     return;
   }
 
-  float blurRadius = max(uPostParams.x, 0.01);
-  float blurMix = uPostParams.y;
-  float bloomIntensity = uPostParams.z;
-  float screenMix = uPostParams.w;
+  float threshold = max(uPostBloomParams.x, 0.0);
+  float intensity = max(uPostBloomParams.y, 0.0);
+  float scatter = clamp(uPostBloomParams.z, 0.0, 1.0);
 
-  vec4 narrowBlur = blurSample(blurRadius);
-  vec4 wideBlur = blurSample(blurRadius * 1.9);
-  vec4 blurred = mix(narrowBlur, wideBlur, clamp(blurMix, 0.0, 1.0));
+  vec4 blurA = blurBloom(mix(0.75, 1.6, scatter), threshold);
+  vec4 blurB = blurBloom(mix(1.4, 3.4, scatter), threshold);
+  vec4 bloomBlur = mix(blurA, blurB, scatter);
+  vec3 bloom = bloomBlur.rgb * intensity;
+  vec3 composited = base.rgb + bloom;
+  vec3 color = applyTonemapping(composited, uPostTonemappingMode);
+  float alpha = clamp(max(base.a, bloomBlur.a * min(1.0, 0.45 + intensity * 0.2)), 0.0, 1.0);
 
-  vec3 brightBase = brightPass(base.rgb);
-  vec3 brightBlur = brightPass(blurred.rgb);
-  vec3 bloomLayer = mix(brightBase, brightBlur, blurMix) * bloomIntensity;
-  vec3 filtered = clamp(blurred.rgb + bloomLayer, 0.0, 1.0);
-  vec3 color = blendLayer(base.rgb, filtered, screenMix, uPostBlendMode) * clamp(uPostGlobalAlpha, 0.0, 1.0);
-  float alpha = clamp(max(base.a, blurred.a), 0.0, 1.0) * clamp(uPostGlobalAlpha, 0.0, 1.0);
-
-  gl_FragColor = vec4(clamp(color, 0.0, 1.0), alpha);
+  gl_FragColor = vec4(color, alpha);
 }

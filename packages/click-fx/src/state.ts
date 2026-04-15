@@ -35,17 +35,17 @@ const createBurstState = (): BurstState => ({
   originY: 0.5,
   startTime: -100,
   branchAStartTime: -100,
+  arcInitialAngle: 0,
   duration: 0,
   active: 0,
-  b0Radius: 0,
-  b0Softness: 1,
-  b1Radius: 0,
-  b2StartScale: 0.25,
-  b2EndScale: 1,
-  b2TimeFraction: 0.5,
-  b3GrayMultiplier: 1,
-  b3AlphaMultiplier: 1,
-  b4Alpha: 1,
+  coreDiskRadius: 0,
+  coreDiskSoftness: 1,
+  coreDiskScaleStart: 0.25,
+  coreDiskScaleEnd: 1,
+  coreDiskScaleTimeFraction: 0.5,
+  coreDiskAlphaStart: 1,
+  coreDiskAlphaEnd: 0,
+  coreDiskAlphaFadeStartFraction: 0.3,
   dTriangleSize: 0.53,
   d3OuterRadius: 0.203,
   d3InnerRadius: 0.098,
@@ -191,17 +191,17 @@ export const spawnBurst = (
   burst.originY = originY
   burst.startTime = currentTime
   burst.branchAStartTime = currentTime
+  burst.arcInitialAngle = randomBetween(0, Math.PI * 2)
   burst.duration = 0
   burst.active = 1
-  burst.b0Radius = config.b0Radius
-  burst.b0Softness = config.b0Softness
-  burst.b1Radius = config.b1Radius
-  burst.b2StartScale = config.b2StartScale
-  burst.b2EndScale = config.b2EndScale
-  burst.b2TimeFraction = config.b2TimeFraction
-  burst.b3GrayMultiplier = config.b3GrayMultiplier
-  burst.b3AlphaMultiplier = config.b3AlphaMultiplier
-  burst.b4Alpha = config.b4Alpha
+  burst.coreDiskRadius = config.coreDiskRadius
+  burst.coreDiskSoftness = config.coreDiskSoftness
+  burst.coreDiskScaleStart = config.coreDiskScaleStart
+  burst.coreDiskScaleEnd = config.coreDiskScaleEnd
+  burst.coreDiskScaleTimeFraction = config.coreDiskScaleTimeFraction
+  burst.coreDiskAlphaStart = config.coreDiskAlphaStart
+  burst.coreDiskAlphaEnd = config.coreDiskAlphaEnd
+  burst.coreDiskAlphaFadeStartFraction = config.coreDiskAlphaFadeStartFraction
   burst.dTriangleSize = config.dTriangleSize
   burst.d3OuterRadius = config.d3OuterRadius
   burst.d3InnerRadius = config.d3InnerRadius
@@ -233,7 +233,7 @@ export const spawnBurst = (
     burst.duration = Math.max(burst.duration, particle.duration)
   }
 
-  burst.branchAStartTime = burst.startTime + burst.duration * burst.b2TimeFraction
+  burst.branchAStartTime = burst.startTime + burst.duration * burst.coreDiskScaleTimeFraction
 
   burst.particles.forEach((particle) =>
   {
@@ -339,8 +339,8 @@ export const hasActiveBursts = (store: BurstStore) => store.bursts.some((burst) 
 export const getBurstMainFxBounds = (burst: BurstState, config: DebugState): BurstBounds =>
 {
   const compositeScaleMax = Math.max(config.c1StartScale, config.c1EndScale)
-  const coreScaleMax = Math.max(burst.b2StartScale, burst.b2EndScale)
-  const coreRadius = burst.b1Radius * coreScaleMax * compositeScaleMax
+  const coreScaleMax = Math.max(burst.coreDiskScaleStart, burst.coreDiskScaleEnd)
+  const coreRadius = burst.coreDiskRadius * coreScaleMax * compositeScaleMax
   const arcOuterRadius = Math.max(
     Math.abs(config.arcRadius + burst.bounds.minX),
     Math.abs(config.arcRadius + burst.bounds.maxX)

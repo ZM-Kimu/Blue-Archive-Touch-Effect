@@ -9,14 +9,16 @@ uniform vec4 uBurstCoreToneData;
 uniform vec4 uBurstFragmentData;
 uniform vec4 uArcData;
 uniform vec3 uThemeColor;
+uniform vec3 uCoreDiskColor;
 uniform vec3 uFragmentHighlightColor;
-uniform vec3 uBranchAlphaMix;
-uniform vec3 uBranchBlendModes;
 uniform vec3 uCompositeScaleParams;
+uniform vec3 uFinalMixerWeights;
+uniform vec2 uFinalMixerParams;
 uniform float uEffectScale;
 uniform vec4 uFragmentScaleCurveParams;
 uniform vec2 uFragmentAlphaParams;
 uniform vec3 uFragmentInitScaleParams;
+uniform float uMainArcPreviewStage;
 uniform float uCorePreviewStage;
 uniform float uFragmentPreviewStage;
 uniform vec4 uBranchVisibility;
@@ -160,6 +162,28 @@ float sampleParticle(vec4 particleA, vec4 particleB, vec4 particleC, vec2 source
   return circleMask(ellipsePoint, particleB.w, 0.0025);
 }
 
+float sampleMainArcSource(vec2 sourcePoint, float sourceStep, float time) {
+  float center = 0.0;
+  float upper = 0.0;
+  float lower = 0.0;
+
+  center += sampleParticle(uParticleA0, uParticleB0, uParticleC0, sourcePoint, time);
+  center += sampleParticle(uParticleA1, uParticleB1, uParticleC1, sourcePoint, time);
+  center += sampleParticle(uParticleA2, uParticleB2, uParticleC2, sourcePoint, time);
+
+  vec2 upperPoint = sourcePoint + vec2(0.0, sourceStep);
+  upper += sampleParticle(uParticleA0, uParticleB0, uParticleC0, upperPoint, time);
+  upper += sampleParticle(uParticleA1, uParticleB1, uParticleC1, upperPoint, time);
+  upper += sampleParticle(uParticleA2, uParticleB2, uParticleC2, upperPoint, time);
+
+  vec2 lowerPoint = sourcePoint - vec2(0.0, sourceStep);
+  lower += sampleParticle(uParticleA0, uParticleB0, uParticleC0, lowerPoint, time);
+  lower += sampleParticle(uParticleA1, uParticleB1, uParticleC1, lowerPoint, time);
+  lower += sampleParticle(uParticleA2, uParticleB2, uParticleC2, lowerPoint, time);
+
+  return center * 0.6 + (upper + lower) * 0.2;
+}
+
 float fragmentGrowthFactor(float progress) {
   float t = clamp(progress, 0.0, 1.0);
   float growFrac = clamp(uFragmentScaleCurveParams.w, 0.0001, 1.0);
@@ -298,19 +322,27 @@ vec3 screenBlend(vec3 base, vec3 blend) {
   return 1.0 - (1.0 - base) * (1.0 - blend);
 }
 
-vec3 blendLayer(vec3 dst, vec3 src, float alpha, float mode) {
-  float mixAlpha = clamp(alpha, 0.0, 1.0);
-  vec3 clampedSrc = clamp(src, 0.0, 1.0);
+vec3 mixFinalLayers(vec3 mainArcLayer, vec3 coreDiskLayer, vec3 fragmentLayer, vec3 weights, float mode, float gain) {
+  vec3 clampedWeights = max(weights, vec3(0.0));
+  vec3 weightedMainArc = clamp(mainArcLayer, 0.0, 1.0) * clampedWeights.x;
+  vec3 weightedCoreDisk = clamp(coreDiskLayer, 0.0, 1.0) * clampedWeights.y;
+  vec3 weightedFragments = clamp(fragmentLayer, 0.0, 1.0) * clampedWeights.z;
+  vec3 mixed = vec3(0.0);
 
   if (mode < 0.5) {
-    return mix(dst, clampedSrc, mixAlpha);
+    float totalWeight = clampedWeights.x + clampedWeights.y + clampedWeights.z;
+    if (totalWeight > 0.0001) {
+      mixed = (weightedMainArc + weightedCoreDisk + weightedFragments) / totalWeight;
+    }
+  } else if (mode < 1.5) {
+    mixed = weightedMainArc + weightedCoreDisk + weightedFragments;
+  } else if (mode < 2.5) {
+    mixed = screenBlend(screenBlend(weightedCoreDisk, weightedMainArc), weightedFragments);
+  } else {
+    mixed = max(weightedMainArc, max(weightedCoreDisk, weightedFragments));
   }
 
-  if (mode < 1.5) {
-    return dst + clampedSrc * mixAlpha;
-  }
-
-  return mix(dst, screenBlend(clamp(dst, 0.0, 1.0), clampedSrc), mixAlpha);
+  return mixed * max(gain, 0.0);
 }
 
 vec3 fragmentThemeColor(vec4 particleA, float time) {
@@ -391,29 +423,29 @@ void main() {
 
   if (coreDiskVisible > 0.0) {
     float burstProgress = clamp((uTime - uBurstTiming.x) / max(uBurstTiming.z, 0.0001), 0.0, 1.0);
-    float b0Height = heightCircle(compositeLocal, uBurstCoreData.x, uBurstCoreData.y);
-    float b1Mask = circleMask(compositeLocal, uBurstCoreData.z, 0.0025);
+    float baseCircleBlur = mix(0.0015, 0.02, clamp(uBurstCoreData.y, 0.0, 1.0));
+    float bBaseMask = circleMask(compositeLocal, uBurstCoreData.x, baseCircleBlur);
+    vec3 baseCircleColor = clamp(uCoreDiskColor, 0.0, 1.0) * bBaseMask;
     float scaleProgress = clamp(burstProgress / max(uBurstCoreAnimData.z, 0.0001), 0.0, 1.0);
-    float b2Scale = mix(uBurstCoreAnimData.x, uBurstCoreAnimData.y, easeOutCubic(scaleProgress));
-    float b2Mask = circleMask(compositeLocal / max(b2Scale, 0.0001), uBurstCoreData.z, 0.0025);
-    float curveDistance = mix(0.0, uBurstCoreData.x, burstProgress);
-    float seqValue = heightCircle(vec2(curveDistance, 0.0), uBurstCoreData.x, uBurstCoreData.y);
-    float graySeq = seqValue * uBurstCoreToneData.x;
-    float alphaSeq = seqValue * uBurstCoreToneData.y;
-    float b3Gray = b2Mask * graySeq;
-    float b3Alpha = b2Mask * alphaSeq;
-    float b4Mask = b3Alpha * uBurstCoreToneData.z;
+    float bScaleValue = mix(uBurstCoreAnimData.x, uBurstCoreAnimData.y, easeOutCubic(scaleProgress));
+    float bScaleMask = circleMask(compositeLocal / max(bScaleValue, 0.0001), uBurstCoreData.x, baseCircleBlur);
+    vec3 scaledCircleColor = clamp(uCoreDiskColor, 0.0, 1.0) * bScaleMask;
+    float alphaProgress = clamp(
+      (burstProgress - uBurstCoreToneData.z) / max(1.0 - uBurstCoreToneData.z, 0.0001),
+      0.0,
+      1.0
+    );
+    float bAlphaValue = mix(uBurstCoreToneData.x, uBurstCoreToneData.y, easeOutCubic(alphaProgress));
+    float bAlphaMask = bScaleMask * bAlphaValue;
 
     if (uCorePreviewStage < 0.5) {
-      coreColor += vec3(b0Height);
+      coreColor += baseCircleColor;
     } else if (uCorePreviewStage < 1.5) {
-      coreColor += vec3(b1Mask);
+      coreColor += scaledCircleColor;
     } else if (uCorePreviewStage < 2.5) {
-      coreColor += vec3(b2Mask);
-    } else if (uCorePreviewStage < 3.5) {
-      coreColor += vec3(b3Gray);
+      coreColor += vec3(bAlphaMask);
     } else {
-      coreColor += clamp(uThemeColor, 0.0, 1.0) * b4Mask;
+      coreColor += scaledCircleColor * bAlphaValue;
     }
   }
 
@@ -493,54 +525,87 @@ void main() {
   }
 
   if (mainArcVisible > 0.0) {
+    float a3SourceMask = 0.0;
+    a3SourceMask += sampleParticle(uParticleA0, uParticleB0, uParticleC0, compositeLocal, uTime);
+    a3SourceMask += sampleParticle(uParticleA1, uParticleB1, uParticleC1, compositeLocal, uTime);
+    a3SourceMask += sampleParticle(uParticleA2, uParticleB2, uParticleC2, compositeLocal, uTime);
+
+    float a1Mask = circleMask(
+      vec2(
+        compositeLocal.x / max(uParticleC0.x, 0.0001),
+        compositeLocal.y / max(uParticleC0.y, 0.0001)
+      ),
+      uParticleB0.w,
+      0.0025
+    );
+
+    vec2 warpLocal = compositeLocal;
+    float warpRadialDistance = length(warpLocal);
+    float warpAngle = atan(warpLocal.y, warpLocal.x);
+    float halfAngle = uArcData.x * 0.5;
+    float arcCenterAngle = 1.57079633;
+    float warpAngleDiff = atan(sin(warpAngle - arcCenterAngle), cos(warpAngle - arcCenterAngle));
+    float a4Mask = 0.0;
+
+    if (abs(warpAngleDiff) <= halfAngle) {
+      float angleT = (warpAngleDiff + halfAngle) / max(2.0 * halfAngle, 0.0001);
+      float sourceX = warpRadialDistance - uArcData.y;
+      float sourceY = mix(uArcSourceBounds.z, uArcSourceBounds.w, angleT);
+      float sourceSpan = max(uArcSourceBounds.w - uArcSourceBounds.z, 0.0);
+      float sourceStep = max(sourceSpan / 40.0, 0.004);
+
+      if (sourceX >= uArcSourceBounds.x && sourceX <= uArcSourceBounds.y) {
+        vec2 sourcePoint = vec2(sourceX, sourceY);
+        a4Mask += sampleMainArcSource(sourcePoint, sourceStep, uTime);
+      }
+    }
+
     vec2 local = compositeLocal;
     float rotationAngle = max(uTime - uBurstTiming.y, 0.0) * uArcData.z;
-    local = rotate2d(local, -rotationAngle);
+    float initialAngle = uBurstCoreAnimData.w;
+    local = rotate2d(local, -(initialAngle + rotationAngle));
     local.x *= -1.0;
 
     float radialDistance = length(local);
     float angle = atan(local.y, local.x);
-    float halfAngle = uArcData.x * 0.5;
-    float arcCenterAngle = 1.57079633;
     float angleDiff = atan(sin(angle - arcCenterAngle), cos(angle - arcCenterAngle));
 
     if (abs(angleDiff) <= halfAngle) {
       float angleT = (angleDiff + halfAngle) / max(2.0 * halfAngle, 0.0001);
       float sourceX = radialDistance - uArcData.y;
       float sourceY = mix(uArcSourceBounds.z, uArcSourceBounds.w, angleT);
+      float sourceSpan = max(uArcSourceBounds.w - uArcSourceBounds.z, 0.0);
+      float sourceStep = max(sourceSpan / 40.0, 0.004);
 
       if (sourceX >= uArcSourceBounds.x && sourceX <= uArcSourceBounds.y) {
         vec2 sourcePoint = vec2(sourceX, sourceY);
-        arcIntensity += sampleParticle(uParticleA0, uParticleB0, uParticleC0, sourcePoint, uTime);
-        arcIntensity += sampleParticle(uParticleA1, uParticleB1, uParticleC1, sourcePoint, uTime);
-        arcIntensity += sampleParticle(uParticleA2, uParticleB2, uParticleC2, sourcePoint, uTime);
+        arcIntensity += sampleMainArcSource(sourcePoint, sourceStep, uTime);
       }
+    }
+
+    if (uMainArcPreviewStage < 0.5) {
+      arcIntensity = a1Mask;
+    } else if (uMainArcPreviewStage < 1.5) {
+      arcIntensity = a3SourceMask;
+    } else if (uMainArcPreviewStage < 2.5) {
+      arcIntensity = a4Mask;
     }
   }
 
-  vec3 coreLayer = blendLayer(
-    vec3(0.0),
-    clamp(coreColor, 0.0, 1.0),
-    coreDiskVisible * uBranchAlphaMix.y,
-    uBranchBlendModes.y
-  );
   vec3 arcLayer = clamp(uThemeColor * arcIntensity, 0.0, 1.0);
+  if (uMainArcPreviewStage < 3.5) {
+    arcLayer = vec3(arcIntensity);
+  }
+  vec3 mainArcLayer = clamp(arcLayer * mainFxVisible, 0.0, 1.0);
+  vec3 coreDiskLayer = clamp(coreColor * mainFxVisible, 0.0, 1.0);
   vec3 fragmentLayer = clamp(fragmentColor, 0.0, 1.0);
-  vec3 mainFxColor = coreLayer;
-
-  mainFxColor = blendLayer(
-    mainFxColor,
-    arcLayer,
-    mainArcVisible * uBranchAlphaMix.x,
-    uBranchBlendModes.x
-  );
-  mainFxColor *= mainFxVisible;
-
-  vec3 finalColor = blendLayer(
-    mainFxColor,
+  vec3 finalColor = mixFinalLayers(
+    mainArcLayer,
+    coreDiskLayer,
     fragmentLayer,
-    fragmentsVisible * uBranchAlphaMix.z,
-    uBranchBlendModes.z
+    uFinalMixerWeights,
+    uFinalMixerParams.x,
+    uFinalMixerParams.y
   );
   finalColor = clamp(finalColor, 0.0, 1.0);
   float alpha = clamp(max(finalColor.r, max(finalColor.g, finalColor.b)), 0.0, 1.0);

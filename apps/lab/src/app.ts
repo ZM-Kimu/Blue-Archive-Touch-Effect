@@ -9,6 +9,7 @@ import {
   defaultConfig,
   defaultCorePreviewStage,
   defaultFragmentPreviewStage,
+  defaultMainArcPreviewStage,
 } from './lab-config'
 import { createDebugPanel } from './ui'
 import type {
@@ -18,6 +19,7 @@ import type {
   FragmentPreviewStage,
   LabAppearanceState,
   LabRuntimeDebugState,
+  MainArcPreviewStage,
   NumericRuntimeKey,
 } from './types'
 
@@ -39,6 +41,7 @@ export const bootstrapClickFx = () =>
   const appearance: LabAppearanceState = {
     backgroundColor: '#000000',
   }
+  let mainArcPreviewStage: MainArcPreviewStage = defaultMainArcPreviewStage
   let corePreviewStage: CorePreviewStage = defaultCorePreviewStage
   let fragmentPreviewStage: FragmentPreviewStage = defaultFragmentPreviewStage
 
@@ -46,9 +49,11 @@ export const bootstrapClickFx = () =>
     app,
     config,
     branchVisibility,
+    getMainArcPreviewStage: () => mainArcPreviewStage,
     getCorePreviewStage: () => corePreviewStage,
     getFragmentPreviewStage: () => fragmentPreviewStage,
     getThemeColor: () => config.themeColor,
+    getCoreDiskColor: () => config.coreDiskColor,
     getBackgroundColor: () => appearance.backgroundColor,
     onControlChange: (key: NumericRuntimeKey, value) =>
     {
@@ -67,6 +72,11 @@ export const bootstrapClickFx = () =>
       branchVisibility[key] = value
       syncControls()
     },
+    onMainArcPreviewChange: (value) =>
+    {
+      mainArcPreviewStage = value
+      syncControls()
+    },
     onCorePreviewChange: (value) =>
     {
       corePreviewStage = value
@@ -81,6 +91,12 @@ export const bootstrapClickFx = () =>
     {
       config.themeColor = value
       applyRuntimeConfigConstraints(config, 'themeColor')
+      syncControls()
+    },
+    onCoreDiskColorChange: (value) =>
+    {
+      config.coreDiskColor = value
+      applyRuntimeConfigConstraints(config, 'coreDiskColor')
       syncControls()
     },
     onBackgroundColorChange: (value) =>
@@ -106,6 +122,7 @@ export const bootstrapClickFx = () =>
     runtime.updateConfig({ ...config })
     runtime.setDebugState({
       branchVisibility: { ...branchVisibility },
+      mainArcPreviewStage,
       corePreviewStage,
       fragmentPreviewStage,
     })

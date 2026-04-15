@@ -1,10 +1,35 @@
 export type UniformValue<T> = { value: T }
-export const blendModes = ['normal', 'add', 'screen'] as const
-export type BlendMode = (typeof blendModes)[number]
+export const finalMixerModes = ['normalized', 'add', 'screen', 'max'] as const
+export type FinalMixerMode = (typeof finalMixerModes)[number]
+export const tonemappingModes = ['none', 'neutral', 'aces'] as const
+export type TonemappingMode = (typeof tonemappingModes)[number]
 
 export type BranchKey = 'mainArc' | 'coreDisk' | 'mainFx' | 'fragments' | 'filter'
-export type StageKey = 'a1' | 'a2' | 'a3' | 'a4' | 'a6' | 'a7' | 'b0' | 'b1' | 'b2' | 'b3' | 'b4' | 'c1' | 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6' | 'd7' | 'd8' | 'd9' | 'fx'
-export type CorePreviewStage = 'b0' | 'b1' | 'b2' | 'b3' | 'b4'
+export type StageKey =
+  | 'a1'
+  | 'a2'
+  | 'a3'
+  | 'a4'
+  | 'a6'
+  | 'a7'
+  | 'bBase'
+  | 'bScale'
+  | 'bAlpha'
+  | 'bFinal'
+  | 'c1'
+  | 'd0'
+  | 'd1'
+  | 'd2'
+  | 'd3'
+  | 'd4'
+  | 'd5'
+  | 'd6'
+  | 'd7'
+  | 'd8'
+  | 'd9'
+  | 'fx'
+export type MainArcPreviewStage = 'a1' | 'a3' | 'a4' | 'a6' | 'a7'
+export type CorePreviewStage = 'bBase' | 'bScale' | 'bAlpha' | 'bFinal'
 export type FragmentPreviewStage = 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6' | 'd7' | 'd8' | 'd9'
 
 export type BranchVisibility = Record<BranchKey, boolean>
@@ -31,19 +56,17 @@ export type DebugState = {
   arcRadius: number
   rotationSpeedDeg: number
   themeColor: ThemeColor
-  mainArcAlphaMix: number
-  mainArcBlendMode: BlendMode
-  coreDiskBlendMode: BlendMode
-  b0Radius: number
-  b0Softness: number
-  b1Radius: number
-  b2StartScale: number
-  b2EndScale: number
-  b2TimeFraction: number
-  b3GrayMultiplier: number
-  b3AlphaMultiplier: number
-  b4Alpha: number
-  coreDiskAlphaMix: number
+  mainArcWeight: number
+  coreDiskWeight: number
+  coreDiskColor: ThemeColor
+  coreDiskRadius: number
+  coreDiskSoftness: number
+  coreDiskScaleStart: number
+  coreDiskScaleEnd: number
+  coreDiskScaleTimeFraction: number
+  coreDiskAlphaStart: number
+  coreDiskAlphaEnd: number
+  coreDiskAlphaFadeStartFraction: number
   c1StartScale: number
   c1EndScale: number
   c1TimeFraction: number
@@ -70,16 +93,13 @@ export type DebugState = {
   d9StartScale: number
   d9EndScale: number
   d9TimeFraction: number
-  fragmentsAlphaMix: number
-  fragmentsBlendMode: BlendMode
-  fxBlurRadius: number
-  fxBlurMix: number
-  fxBloomThresholdLow: number
-  fxBloomThresholdHigh: number
+  fragmentsWeight: number
+  finalMixerMode: FinalMixerMode
+  finalMixerGain: number
+  fxBloomThreshold: number
   fxBloomIntensity: number
-  fxScreenMix: number
-  filterBlendMode: BlendMode
-  globalAlpha: number
+  fxBloomScatter: number
+  fxTonemappingMode: TonemappingMode
 }
 
 export type ParticleState = {
@@ -122,17 +142,17 @@ export type BurstState = {
   originY: number
   startTime: number
   branchAStartTime: number
+  arcInitialAngle: number
   duration: number
   active: number
-  b0Radius: number
-  b0Softness: number
-  b1Radius: number
-  b2StartScale: number
-  b2EndScale: number
-  b2TimeFraction: number
-  b3GrayMultiplier: number
-  b3AlphaMultiplier: number
-  b4Alpha: number
+  coreDiskRadius: number
+  coreDiskSoftness: number
+  coreDiskScaleStart: number
+  coreDiskScaleEnd: number
+  coreDiskScaleTimeFraction: number
+  coreDiskAlphaStart: number
+  coreDiskAlphaEnd: number
+  coreDiskAlphaFadeStartFraction: number
   dTriangleSize: number
   d3OuterRadius: number
   d3InnerRadius: number
@@ -189,6 +209,7 @@ export type RuntimeConfig = DebugState
 
 export type RuntimeDebugState = {
   branchVisibility: BranchVisibility
+  mainArcPreviewStage: MainArcPreviewStage
   corePreviewStage: CorePreviewStage
   fragmentPreviewStage: FragmentPreviewStage
 }

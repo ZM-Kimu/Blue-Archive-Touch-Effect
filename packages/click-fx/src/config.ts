@@ -1,5 +1,5 @@
 import type { RuntimeConfig } from './types'
-import { blendModes } from './types'
+import { finalMixerModes, tonemappingModes } from './types'
 
 export const defaultRuntimeConfig: RuntimeConfig = {
   radius: 0.1,
@@ -21,19 +21,21 @@ export const defaultRuntimeConfig: RuntimeConfig = {
     g: 0.9,
     b: 1,
   },
-  mainArcAlphaMix: 0.85,
-  mainArcBlendMode: 'screen',
-  b0Radius: 0.18,
-  b0Softness: 0.6,
-  b1Radius: 0.175,
-  b2StartScale: 0.25,
-  b2EndScale: 1,
-  b2TimeFraction: 0.3,
-  b3GrayMultiplier: 1.1,
-  b3AlphaMultiplier: 0.81,
-  b4Alpha: 1,
-  coreDiskAlphaMix: 1,
-  coreDiskBlendMode: 'add',
+  mainArcWeight: 0.85,
+  coreDiskWeight: 1,
+  coreDiskColor: {
+    r: 0x55 / 255,
+    g: 0xBD / 255,
+    b: 0xFF / 255,
+  },
+  coreDiskRadius: 0.175,
+  coreDiskSoftness: 0.6,
+  coreDiskScaleStart: 0.25,
+  coreDiskScaleEnd: 1,
+  coreDiskScaleTimeFraction: 0.3,
+  coreDiskAlphaStart: 1,
+  coreDiskAlphaEnd: 0,
+  coreDiskAlphaFadeStartFraction: 0.3,
   c1StartScale: 0.2,
   c1EndScale: 1,
   c1TimeFraction: 0.85,
@@ -60,16 +62,13 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   d9StartScale: 0.85,
   d9EndScale: 1.1,
   d9TimeFraction: 0.3,
-  fragmentsAlphaMix: 0.75,
-  fragmentsBlendMode: 'add',
-  fxBlurRadius: 1.1,
-  fxBlurMix: 0.6,
-  fxBloomThresholdLow: 0.08,
-  fxBloomThresholdHigh: 0.7,
-  fxBloomIntensity: 2.2,
-  fxScreenMix: 1,
-  filterBlendMode: 'add',
-  globalAlpha: 0.85,
+  fragmentsWeight: 0.75,
+  finalMixerMode: 'normalized',
+  finalMixerGain: 1,
+  fxBloomThreshold: 1,
+  fxBloomIntensity: 1,
+  fxBloomScatter: 0.7,
+  fxTonemappingMode: 'neutral',
 }
 
 export const applyRuntimeConfigConstraints = (
@@ -78,33 +77,48 @@ export const applyRuntimeConfigConstraints = (
 ) =>
 {
   const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
-  const normalizeThemeChannel = (value: number | undefined, fallback: number) =>
+  const clampNonNegative = (value: number) => Math.max(0, value)
+  const normalizeColorChannel = (value: number | undefined, fallback: number) =>
     Number.isFinite(value) ? clamp01(value as number) : fallback
-  const ensureBlendMode = (
-    key: 'mainArcBlendMode' | 'coreDiskBlendMode' | 'fragmentsBlendMode' | 'filterBlendMode',
-    fallback: RuntimeConfig[typeof key]
-  ) =>
+  const normalizeColor = (
+    color: RuntimeConfig['themeColor'] | RuntimeConfig['coreDiskColor'] | undefined,
+    fallback: RuntimeConfig['themeColor']
+  ) => ({
+    r: normalizeColorChannel(color?.r, fallback.r),
+    g: normalizeColorChannel(color?.g, fallback.g),
+    b: normalizeColorChannel(color?.b, fallback.b),
+  })
+  const ensureFinalMixerMode = () =>
   {
-    if (!blendModes.includes(config[key]))
+    if (!finalMixerModes.includes(config.finalMixerMode))
     {
-      config[key] = fallback
+      config.finalMixerMode = 'normalized'
+    }
+  }
+  const ensureTonemappingMode = () =>
+  {
+    if (!tonemappingModes.includes(config.fxTonemappingMode))
+    {
+      config.fxTonemappingMode = 'neutral'
     }
   }
 
-  config.mainArcAlphaMix = clamp01(config.mainArcAlphaMix)
-  config.coreDiskAlphaMix = clamp01(config.coreDiskAlphaMix)
-  config.fragmentsAlphaMix = clamp01(config.fragmentsAlphaMix)
-  config.fxScreenMix = clamp01(config.fxScreenMix)
-  config.globalAlpha = clamp01(config.globalAlpha)
-  config.themeColor = {
-    r: normalizeThemeChannel(config.themeColor?.r, defaultRuntimeConfig.themeColor.r),
-    g: normalizeThemeChannel(config.themeColor?.g, defaultRuntimeConfig.themeColor.g),
-    b: normalizeThemeChannel(config.themeColor?.b, defaultRuntimeConfig.themeColor.b),
-  }
-  ensureBlendMode('mainArcBlendMode', 'add')
-  ensureBlendMode('coreDiskBlendMode', 'add')
-  ensureBlendMode('fragmentsBlendMode', 'add')
-  ensureBlendMode('filterBlendMode', 'add')
+  config.mainArcWeight = clampNonNegative(config.mainArcWeight)
+  config.coreDiskWeight = clampNonNegative(config.coreDiskWeight)
+  config.fragmentsWeight = clampNonNegative(config.fragmentsWeight)
+  config.finalMixerGain = clampNonNegative(config.finalMixerGain)
+  config.themeColor = normalizeColor(config.themeColor, defaultRuntimeConfig.themeColor)
+  config.coreDiskColor = normalizeColor(config.coreDiskColor, defaultRuntimeConfig.coreDiskColor)
+  ensureFinalMixerMode()
+  ensureTonemappingMode()
+  config.coreDiskSoftness = clamp01(config.coreDiskSoftness)
+  config.coreDiskScaleTimeFraction = clamp01(config.coreDiskScaleTimeFraction)
+  config.coreDiskAlphaStart = clamp01(config.coreDiskAlphaStart)
+  config.coreDiskAlphaEnd = clamp01(config.coreDiskAlphaEnd)
+  config.coreDiskAlphaFadeStartFraction = clamp01(config.coreDiskAlphaFadeStartFraction)
+  config.fxBloomThreshold = Math.max(0, config.fxBloomThreshold)
+  config.fxBloomIntensity = Math.max(0, config.fxBloomIntensity)
+  config.fxBloomScatter = clamp01(config.fxBloomScatter)
 
   if (config.scaleMin > config.scaleMax)
   {
@@ -202,17 +216,6 @@ export const applyRuntimeConfigConstraints = (
     } else if (changedKey === 'd8FlashPeriodMax')
     {
       config.d8FlashPeriodMin = config.d8FlashPeriodMax
-    }
-  }
-
-  if (config.fxBloomThresholdLow > config.fxBloomThresholdHigh)
-  {
-    if (changedKey === 'fxBloomThresholdLow')
-    {
-      config.fxBloomThresholdHigh = config.fxBloomThresholdLow
-    } else if (changedKey === 'fxBloomThresholdHigh')
-    {
-      config.fxBloomThresholdLow = config.fxBloomThresholdHigh
     }
   }
 

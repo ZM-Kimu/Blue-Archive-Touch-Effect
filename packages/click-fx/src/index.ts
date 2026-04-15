@@ -1,9 +1,10 @@
 export { applyRuntimeConfigConstraints, defaultRuntimeConfig } from './config'
 export { createClickFx } from './runtime'
-export { blendModes } from './types'
+export { finalMixerModes, tonemappingModes } from './types'
 export type {
-  BlendMode,
   ClickFxInstance,
   CreateClickFxOptions,
+  FinalMixerMode,
   RuntimeConfig,
+  TonemappingMode,
 } from './types'

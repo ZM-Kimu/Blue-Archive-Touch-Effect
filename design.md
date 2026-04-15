@@ -13,12 +13,13 @@
   - `Branch B` / `Branch D` 的 preview selector
   - `A7` 颜色
   - `C1` 参数
+  - `FinalMixer` 参数
   - `Filter` 参数
   - `D8` 的 `Alpha Max / Alpha Min`
   - `D9` 参数
 - 当前实现中，`Branch B` 和 `Branch D` 的 preview selector 不只是“检查用预览”，它们会直接替换该 branch 在最终画面中的输出。
   - 默认值已经设置为最终希望的阶段：
-    - `CoreDisk = B4`
+    - `CoreDisk = Final`
     - `Fragments = D8`
 
 ## 2. 当前总流程
@@ -26,21 +27,21 @@
 ```text
 Branch A = MainArc
 Branch B = CoreDisk
-Branch C = Composite(MainArc, CoreDisk)
+Branch C = SharedTransform(MainArc, CoreDisk)
 Branch D = Fragments
-FinalFX = Composite(MainFX, Fragments)
-FX = PostProcess(FinalFX, bloom + blur, blend = screen)
+FinalFX = FinalMixer(MainArc, CoreDisk, Fragments)
+FX = PostProcess(FinalFX, bloom + tonemapping)
 ```
 
 更准确地说，当前代码是：
 
 ```text
 MainArc   = A7
-CoreDisk  = B4           # 默认 preview
+CoreDisk  = Final        # 默认 preview
 MainFX    = C1
 Fragments = D8           # 默认 preview
-FinalFX   = MainFX + Fragments
-FX        = Screen(FinalFX, Bloom(Blur(FinalFX)))
+FinalFX   = FinalMixer(MainArcAfterC1, CoreDiskAfterC1, Fragments)
+FX        = BloomTonemap(FinalFX)
 ```
 
 ## 3. Branch A: MainArc
@@ -139,77 +140,60 @@ MainArc = A7
 
 ## 4. Branch B: CoreDisk
 
-### B0
+### BaseCircle
 
 ```text
-B0 = CircleHeight(
-    radius = 0.180,
-    softness = 1.00
+BaseCircle = ColoredDisk(
+    radius = coreDiskRadius,
+    softness = coreDiskSoftness,
+    color = coreDiskColor
 )
 ```
 
 说明：
 
-- `B0` 是中心亮、边缘暗的径向 height map
-- 它是 helper，也可以通过 preview selector 单独查看
+- 这是一个实心圆盘，不是空心 ring
+- `coreDiskColor` 独立于全局 `themeColor`
+- 默认颜色是 `#55BDFF`
 
-### B1
-
-```text
-B1 = SolidCircle(
-    radius = 0.175
-)
-```
-
-### B2
+### Scale
 
 ```text
-B2 = ScaleAnimation(
-    input = B1,
-    start_scale = 0.25,
-    end_scale = 1.00,
-    time_fraction = 0.30,
+Scale = ScaleAnimation(
+    input = BaseCircle,
+    start_scale = coreDiskScaleStart,
+    end_scale = coreDiskScaleEnd,
+    time_fraction = coreDiskScaleTimeFraction,
     method = ease-out
 )
 ```
 
 说明：
 
-- B2 在 burst 生命周期前 `30%` 内完成放大
-- 之后保持 `1.00`
+- Scale 继承 BaseCircle 的着色结果
+- 放大时序仍然是旧 CoreDisk scale 阶段的 ease-out 骨架
 
-### B3
+### Alpha
 
 ```text
-B3 = GrayAlphaFromSequence(
-    input = B2,
-    gray_seq = B0[Seq],
-    alpha_seq = B0[Seq],
-    gray_mult = 1.23,
-    alpha_mult = 0.54
+Alpha = HoldThenFade(
+    input = Scale,
+    start_alpha = coreDiskAlphaStart,
+    end_alpha = coreDiskAlphaEnd,
+    fade_start_fraction = coreDiskAlphaFadeStartFraction
 )
 ```
 
 说明：
 
-- 当前实现不是“径向 reveal”
-- `B0` 被当作一条从中心到边缘的 1D 序列
-- 这条序列随时间采样，再统一作用到整个 `B2`
-
-### B4
-
-```text
-B4 = ReplaceColor(
-    input = B3,
-    color = #4FB7FF,
-    alpha = 1.00
-)
-```
+- 这一步只控制透明度/coverage
+- 不再有独立的 gray/tone 阶段
 
 ### Branch B 默认输出
 
 ```text
-CoreDisk = B4
+CoreDisk = Final
+Final = Scale * Alpha
 ```
 
 ## 5. Branch C: Main Composite
@@ -217,11 +201,18 @@ CoreDisk = B4
 ### C0
 
 ```text
-C0 = Composite(
-    layers = [CoreDisk, MainArc],
-    blend = add
+C0 = SharedCarrierDomain(
+    layers = [CoreDisk, MainArc]
 )
 ```
+
+说明：
+
+- `C0` 不做 RGB 色混
+- `C0` 只建立 `CoreDisk` / `MainArc` 共享的形状与变换域
+- `C0` 之后仍然保留两条独立 carrier：
+  - `coreDiskCarrierAfterC0`
+  - `mainArcCarrierAfterC0`
 
 ### B -> A handoff policy
 
@@ -233,14 +224,14 @@ start Branch A when Branch B scale reaches 100%
 
 - `CoreDisk` 点击后立刻开始
 - `MainArc` 不会立刻开始
-- `MainArc` 整条时间线会后移到 `B2` 完成放大之后
+- `MainArc` 整条时间线会后移到 CoreDisk 的 Scale 阶段完成之后
 - A 分支不会压缩，只会整体后移
 
 ### C1
 
 ```text
 C1 = AnimateScale(
-    input = C0,
+    input = [coreDiskCarrierAfterC0, mainArcCarrierAfterC0],
     start_scale = 0.20,
     end_scale = 1.00,
     time_fraction = 0.85,
@@ -250,14 +241,40 @@ C1 = AnimateScale(
 
 说明：
 
-- `C1` 是对整个 `C0` 做后置缩放
+- `C1` 是对 `CoreDisk` / `MainArc` 的共享 carrier 域做后置缩放
 - 缩放中心是点击点
 
 ### Branch C 输出
 
 ```text
-MainFX = C1
+MainFX = C1(
+    coreDiskCarrierAfterC1,
+    mainArcCarrierAfterC1
+)
 ```
+
+### FinalMixer
+
+```text
+FinalFX = FinalMixer(
+    MainArc   = ThemeColor * mainArcCarrierAfterC1,
+    CoreDisk  = CoreDiskColor * coreDiskCarrierAfterC1,
+    Fragments = FragmentColor,
+    weights   = [mainArcWeight, coreDiskWeight, fragmentsWeight],
+    mode      = finalMixerMode,
+    gain      = finalMixerGain
+)
+```
+
+说明：
+
+- `Fragments` 不经过 `C1`
+- A/B/D 的最终色混只在 `FinalMixer` 发生
+- `finalMixerMode` 支持：
+  - `normalized`
+  - `add`
+  - `screen`
+  - `max`
 
 ## 6. Branch D: Fragment Particles
 
@@ -397,39 +414,37 @@ FinalFX = MainFX + D8
 
 ## 8. Filter
 
-当前实现为独立 post-process pass，而不是把 bloom/blur 写进主 shader。
+当前实现为独立 post-process pass，语义对齐 Unity 的 `PP FXTouchBloomTonemapping`：
 
 ```text
-FX = Composite(
+FX = PostProcess(
     FinalFX,
-    bloom,
-    blur,
-    blend = screen
+    bloom(threshold, intensity, scatter),
+    tonemapping(mode)
 )
 ```
 
 当前默认值：
 
 ```text
-Blur Radius      = 1.85
-Blur Mix         = 0.60
-Bloom Low        = 0.10
-Bloom High       = 0.74
-Bloom Intensity  = 1.48
-Screen Mix       = 1.00
+Bloom Threshold  = 1.00
+Bloom Intensity  = 1.00
+Bloom Scatter    = 0.70
+Tonemapping      = Neutral
 ```
 
 说明：
 
 - `Filter` 有独立开关
 - 关闭后直接旁路 post-process，只显示原始 `FinalFX`
+- 当前 web 侧不再暴露 `Blur Mix / Screen Mix / Global Alpha / Filter Blend Mode`
 
 ## 9. 当前默认状态汇总
 
 ### Final output defaults
 
 ```text
-Core preview     = B4
+Core preview     = Final
 Fragment preview = D8
 Filter           = enabled
 ```

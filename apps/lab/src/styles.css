@@ -44,7 +44,7 @@ body {
   position: absolute;
   left: 24px;
   bottom: 24px;
-  width: min(360px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;
   padding: 16px;
@@ -89,6 +89,45 @@ body {
   color: rgba(255, 255, 255, 0.9);
 }
 
+.debug-live {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.debug-live__section {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.debug-live__header {
+  margin-bottom: 10px;
+}
+
+.debug-live__header strong,
+.debug-live__header span {
+  display: block;
+}
+
+.debug-live__header strong {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.debug-live__header span {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.54);
+}
+
+.debug-live__body > :last-child {
+  margin-bottom: 0;
+}
+
 .debug-color input[type="color"] {
   width: 44px;
   height: 28px;
@@ -100,8 +139,32 @@ body {
 }
 
 .debug-branches {
+  margin-top: 12px;
+}
+
+.debug-tabs {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.debug-tab {
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.debug-tab[data-active="true"] {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.96);
 }
 
 .debug-branch {
@@ -109,6 +172,10 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.debug-branch[data-active="false"] {
+  display: none;
 }
 
 .debug-branch__header {
@@ -153,6 +220,32 @@ body {
   margin-bottom: 0;
 }
 
+.debug-branch__controls {
+  display: grid;
+  gap: 12px;
+}
+
+.debug-stage-group {
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.debug-stage-group__header {
+  margin-bottom: 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.debug-stage-group__body .debug-stage + .debug-stage {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .debug-preview {
   display: grid;
   grid-template-columns: 74px 1fr;
@@ -189,12 +282,6 @@ body {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.92);
-}
-
-.debug-stage + .debug-stage {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .debug-stage__header {
@@ -253,6 +340,10 @@ body {
     right: 12px;
     bottom: 12px;
     width: auto;
+  }
+
+  .debug-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .debug-control {
