@@ -3,25 +3,24 @@ precision highp float;
 uniform float uTime;
 uniform vec4 uLocalBounds;
 uniform vec4 uBurstTiming;
-uniform vec4 uBurstCoreData;
-uniform vec4 uBurstCoreAnimData;
-uniform vec4 uBurstCoreToneData;
-uniform vec4 uBurstFragmentData;
+uniform vec4 uDiskShapeData;
+uniform vec4 uDiskScaleData;
+uniform vec4 uDiskAlphaData;
+uniform vec3 uDiskColor;
 uniform vec4 uArcData;
-uniform vec3 uThemeColor;
-uniform vec3 uCoreDiskColor;
-uniform vec3 uFragmentHighlightColor;
-uniform vec3 uCompositeScaleParams;
-uniform vec3 uFinalMixerWeights;
-uniform vec2 uFinalMixerParams;
+uniform vec4 uArcAlphaData;
+uniform vec3 uArcColor;
+uniform vec4 uCompositorScaleData;
+uniform vec3 uMixerWeights;
+uniform vec4 uMixerParams;
+uniform float uPreviewMode;
 uniform float uEffectScale;
-uniform vec4 uFragmentScaleCurveParams;
-uniform vec2 uFragmentAlphaParams;
-uniform vec3 uFragmentInitScaleParams;
-uniform float uMainArcPreviewStage;
-uniform float uCorePreviewStage;
-uniform float uFragmentPreviewStage;
-uniform vec4 uBranchVisibility;
+uniform vec4 uShardsShapeData;
+uniform vec4 uShardsScaleCurveData;
+uniform vec2 uShardsAlphaData;
+uniform vec4 uShardsInitScaleData;
+uniform vec3 uShardsTint;
+uniform vec4 uShardsColorData;
 uniform vec4 uArcSourceBounds;
 uniform vec4 uParticleA0;
 uniform vec4 uParticleB0;
@@ -84,13 +83,6 @@ float easeInQuad(float value) {
   return value * value;
 }
 
-float heightCircle(vec2 point, float radius, float softness) {
-  float dist = length(point);
-  float normalized = clamp(1.0 - dist / max(radius, 0.0001), 0.0, 1.0);
-  float falloffPower = mix(3.0, 0.45, clamp(softness, 0.0, 1.0));
-  return pow(normalized, falloffPower);
-}
-
 float sdEquilateralTriangle(vec2 point, float radius) {
   const float k = 1.7320508;
   point.x = abs(point.x) - radius;
@@ -107,31 +99,11 @@ float triangleMask(vec2 point, float blur) {
   return 1.0 - smoothstep(0.0, blur, sd);
 }
 
-float donutMask(vec2 point, float outerRadius, float innerRadius, float blur) {
+float fragmentDistributionMask(vec2 point, float outerRadius, float innerRadius, float blur) {
   float dist = length(point);
   float outer = 1.0 - smoothstep(outerRadius, outerRadius + blur, dist);
   float inner = 1.0 - smoothstep(innerRadius, innerRadius + blur, dist);
   return max(outer - inner, 0.0);
-}
-
-float hash21(vec2 point) {
-  return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453123);
-}
-
-float particleDistributionMap(vec2 point, float outerRadius, float innerRadius) {
-  float ring = donutMask(point, outerRadius, innerRadius, 0.0035);
-  if (ring <= 0.0) {
-    return 0.0;
-  }
-
-  vec2 normalized = point / max(outerRadius, 0.0001);
-  vec2 scaled = normalized * 18.0;
-  vec2 cell = floor(scaled);
-  vec2 local = fract(scaled) - 0.5;
-  float keep = step(0.42, hash21(cell));
-  float dotRadius = mix(0.10, 0.22, hash21(cell + 17.0));
-  float dotMask = 1.0 - smoothstep(dotRadius, dotRadius + 0.06, length(local));
-  return ring * keep * dotMask;
 }
 
 float sampleParticle(vec4 particleA, vec4 particleB, vec4 particleC, vec2 sourcePoint, float time) {
@@ -162,7 +134,7 @@ float sampleParticle(vec4 particleA, vec4 particleB, vec4 particleC, vec2 source
   return circleMask(ellipsePoint, particleB.w, 0.0025);
 }
 
-float sampleMainArcSource(vec2 sourcePoint, float sourceStep, float time) {
+float sampleArcSource(vec2 sourcePoint, float sourceStep, float time) {
   float center = 0.0;
   float upper = 0.0;
   float lower = 0.0;
@@ -171,56 +143,49 @@ float sampleMainArcSource(vec2 sourcePoint, float sourceStep, float time) {
   center += sampleParticle(uParticleA1, uParticleB1, uParticleC1, sourcePoint, time);
   center += sampleParticle(uParticleA2, uParticleB2, uParticleC2, sourcePoint, time);
 
-  vec2 upperPoint = sourcePoint + vec2(0.0, sourceStep);
-  upper += sampleParticle(uParticleA0, uParticleB0, uParticleC0, upperPoint, time);
-  upper += sampleParticle(uParticleA1, uParticleB1, uParticleC1, upperPoint, time);
-  upper += sampleParticle(uParticleA2, uParticleB2, uParticleC2, upperPoint, time);
+  vec2 offset = vec2(0.0, sourceStep);
+  upper += sampleParticle(uParticleA0, uParticleB0, uParticleC0, sourcePoint + offset, time);
+  upper += sampleParticle(uParticleA1, uParticleB1, uParticleC1, sourcePoint + offset, time);
+  upper += sampleParticle(uParticleA2, uParticleB2, uParticleC2, sourcePoint + offset, time);
 
-  vec2 lowerPoint = sourcePoint - vec2(0.0, sourceStep);
-  lower += sampleParticle(uParticleA0, uParticleB0, uParticleC0, lowerPoint, time);
-  lower += sampleParticle(uParticleA1, uParticleB1, uParticleC1, lowerPoint, time);
-  lower += sampleParticle(uParticleA2, uParticleB2, uParticleC2, lowerPoint, time);
+  lower += sampleParticle(uParticleA0, uParticleB0, uParticleC0, sourcePoint - offset, time);
+  lower += sampleParticle(uParticleA1, uParticleB1, uParticleC1, sourcePoint - offset, time);
+  lower += sampleParticle(uParticleA2, uParticleB2, uParticleC2, sourcePoint - offset, time);
 
   return center * 0.6 + (upper + lower) * 0.2;
 }
 
-float fragmentGrowthFactor(float progress) {
-  float t = clamp(progress, 0.0, 1.0);
-  float growFrac = clamp(uFragmentScaleCurveParams.w, 0.0001, 1.0);
-  return clamp(t / growFrac, 0.0, 1.0);
+float shardsGrowthFactor(float progress) {
+  float growFrac = clamp(uShardsScaleCurveData.w, 0.0001, 1.0);
+  return clamp(progress / growFrac, 0.0, 1.0);
 }
 
-float fragmentLifetimeScale(float progress) {
+float shardsLifetimeScale(float progress) {
   float t = clamp(progress, 0.0, 1.0);
-  float growFrac = clamp(uFragmentScaleCurveParams.w, 0.0001, 1.0);
-  float startScale = uFragmentScaleCurveParams.x;
-  float peakScale = uFragmentScaleCurveParams.y;
-  float endScale = uFragmentScaleCurveParams.z;
-
+  float growFrac = clamp(uShardsScaleCurveData.w, 0.0001, 1.0);
   if (t < growFrac) {
-    return mix(startScale, peakScale, fragmentGrowthFactor(t));
+    return mix(uShardsScaleCurveData.x, uShardsScaleCurveData.y, shardsGrowthFactor(t));
   }
 
   float decayWindow = max(1.0 - growFrac, 0.0001);
   float decayT = clamp((t - growFrac) / decayWindow, 0.0, 1.0);
-  return mix(peakScale, endScale, decayT);
+  return mix(uShardsScaleCurveData.y, uShardsScaleCurveData.z, decayT);
 }
 
-float fragmentInitScale(float progress) {
+float shardsInitScale(float progress) {
   float t = clamp(progress, 0.0, 1.0);
-  float initFrac = clamp(uFragmentInitScaleParams.z, 0.0001, 1.0);
+  float initFrac = clamp(uShardsInitScaleData.z, 0.0001, 1.0);
   float initProgress = clamp(t / initFrac, 0.0, 1.0);
-  return mix(uFragmentInitScaleParams.x, uFragmentInitScaleParams.y, easeOutCubic(initProgress));
+  return mix(uShardsInitScaleData.x, uShardsInitScaleData.y, easeOutCubic(initProgress));
 }
 
-float sampleFragmentParticleScaled(
+float sampleShardParticle(
   vec4 particleA,
   vec4 particleB,
   vec4 particleC,
   vec2 point,
   float baseSize,
-  float time,
-  float useLifetimeScale
+  float time
 ) {
   if (particleA.w <= 0.0 || particleA.y <= 0.0) {
     return 0.0;
@@ -247,41 +212,12 @@ float sampleFragmentParticleScaled(
     local.y *= -1.0;
   }
 
-  float sizeScale = particleC.z;
-  if (useLifetimeScale > 0.5) {
-    sizeScale *= fragmentLifetimeScale(progress);
-  }
-
+  float sizeScale = particleC.z * shardsLifetimeScale(progress);
   vec2 spriteLocal = local / max(0.05 * max(baseSize * sizeScale, 0.0001), 0.0001);
   return triangleMask(spriteLocal, 0.04);
 }
 
-float sampleFragmentParticle(
-  vec4 particleA,
-  vec4 particleB,
-  vec4 particleC,
-  vec2 point,
-  float baseSize,
-  float time,
-  float useLifetimeScale
-) {
-  return sampleFragmentParticleScaled(particleA, particleB, particleC, point, baseSize, time, useLifetimeScale);
-}
-
-float fragmentColorProgress(vec4 particleA, float time) {
-  if (particleA.w <= 0.0 || particleA.y <= 0.0) {
-    return 0.0;
-  }
-
-  float progress = (time - particleA.x) / particleA.y;
-  if (progress < 0.0 || progress > 1.0) {
-    return 0.0;
-  }
-
-  return fragmentGrowthFactor(progress);
-}
-
-float fragmentParticleProgress(vec4 particleA, float time) {
+float shardParticleProgress(vec4 particleA, float time) {
   if (particleA.w <= 0.0 || particleA.y <= 0.0) {
     return -1.0;
   }
@@ -294,22 +230,118 @@ float fragmentParticleProgress(vec4 particleA, float time) {
   return progress;
 }
 
-float fragmentAlphaValue(vec4 particleA, vec4 particleC, float time) {
-  float progress = fragmentParticleProgress(particleA, time);
+float shardAlphaValue(vec4 particleA, vec4 particleC, float time) {
+  float progress = shardParticleProgress(particleA, time);
   if (progress < 0.0) {
     return 0.0;
   }
 
-  float growFrac = clamp(uFragmentScaleCurveParams.w, 0.0001, 1.0);
-  float flashPeriod = max(particleC.w, 0.0001);
-  if (progress < growFrac) {
-    return uFragmentAlphaParams.x;
+  const float flashStart = 0.28824294;
+  const float flashEnd = 0.85294878;
+  const float defaultFlashPeriod = 0.115;
+  float flashTimeWarp = clamp(max(particleC.w, 0.0001) / defaultFlashPeriod, 0.65, 1.35);
+  float remapped = progress;
+
+  if (progress > flashStart && progress < flashEnd) {
+    float local = (progress - flashStart) / max(flashEnd - flashStart, 0.0001);
+    local = clamp(local / flashTimeWarp, 0.0, 1.0);
+    remapped = flashStart + local * (flashEnd - flashStart);
   }
 
-  float flashProgress = progress - growFrac;
-  float flashStep = floor(flashProgress / flashPeriod);
-  float phase = mod(flashStep, 2.0);
-  return phase < 0.5 ? uFragmentAlphaParams.x : uFragmentAlphaParams.y;
+  float alphaCurve = 1.0;
+  if (remapped < flashStart) {
+    alphaCurve = 1.0;
+  } else if (remapped < 0.36470589) {
+    alphaCurve = mix(1.0, 0.0, (remapped - flashStart) / max(0.36470589 - flashStart, 0.0001));
+  } else if (remapped < 0.47058824) {
+    alphaCurve = mix(0.0, 1.0, (remapped - 0.36470589) / max(0.47058824 - 0.36470589, 0.0001));
+  } else if (remapped < 0.57352561) {
+    alphaCurve = mix(1.0, 0.0, (remapped - 0.47058824) / max(0.57352561 - 0.47058824, 0.0001));
+  } else if (remapped < 0.66764325) {
+    alphaCurve = mix(0.0, 1.0, (remapped - 0.57352561) / max(0.66764325 - 0.57352561, 0.0001));
+  } else if (remapped < 0.75588620) {
+    alphaCurve = mix(1.0, 0.0, (remapped - 0.66764325) / max(0.75588620 - 0.66764325, 0.0001));
+  } else if (remapped < flashEnd) {
+    alphaCurve = mix(0.0, 1.0, (remapped - 0.75588620) / max(flashEnd - 0.75588620, 0.0001));
+  }
+
+  return mix(uShardsAlphaData.y, uShardsAlphaData.x, clamp(alphaCurve, 0.0, 1.0));
+}
+
+vec3 shardPaletteColor(float progress) {
+  vec3 startColor = vec3(0.53773582, 0.53773582, 0.53773582);
+  vec3 whiteColor = vec3(1.0, 1.0, 1.0);
+  vec3 blueColorA = vec3(0.37264150, 0.77318728, 1.0);
+  vec3 blueColorB = vec3(0.37254903, 0.77254909, 1.0);
+  vec3 cyanDipColor = vec3(0.35294119, 0.72941178, 0.94509810);
+  vec3 endBlueColor = vec3(0.37254903, 0.77254909, 1.0);
+  float t = clamp(progress, 0.0, 1.0);
+
+  if (t < 0.18236057) {
+    return mix(startColor, whiteColor, smoothstep(0.0, 0.18236057, t));
+  }
+
+  if (t < 0.28235295) {
+    return mix(whiteColor, blueColorA, smoothstep(0.18236057, 0.28235295, t));
+  }
+
+  if (t < 0.46176851) {
+    return mix(blueColorA, blueColorB, smoothstep(0.28235295, 0.46176851, t));
+  }
+
+  if (t < 0.66176850) {
+    return mix(blueColorB, cyanDipColor, smoothstep(0.46176851, 0.66176850, t));
+  }
+
+  if (t < 0.82647443) {
+    return mix(cyanDipColor, endBlueColor, smoothstep(0.66176850, 0.82647443, t));
+  }
+
+  return endBlueColor;
+}
+
+float shardPeakWeight(float progress) {
+  float t = clamp(progress, 0.0, 1.0);
+  float rise = smoothstep(0.18236057, 0.28235295, t);
+  float fall = 1.0 - smoothstep(0.46176851, 0.66176850, t);
+  return clamp(rise * fall, 0.0, 1.0);
+}
+
+float shardColorProgress(vec4 particleA, float time) {
+  float progress = shardParticleProgress(particleA, time);
+  if (progress < 0.0) {
+    return 0.0;
+  }
+  return clamp(progress, 0.0, 1.0);
+}
+
+vec3 shardThemeColor(vec4 particleA, float time) {
+  float progress = shardColorProgress(particleA, time);
+  vec3 palette = shardPaletteColor(progress);
+  vec3 tinted = palette * max(uShardsTint, vec3(0.0));
+  float peakBoost = mix(1.0, max(uShardsColorData.x, 0.0), shardPeakWeight(progress));
+  return tinted * peakBoost;
+}
+
+void accumulateShardColor(
+  inout vec3 color,
+  inout float alpha,
+  vec2 point,
+  float baseSize,
+  vec4 particleA,
+  vec4 particleB,
+  vec4 particleC
+) {
+  float particleMask = sampleShardParticle(particleA, particleB, particleC, point, baseSize, uTime);
+  if (particleMask <= 0.0) {
+    return;
+  }
+
+  color += shardThemeColor(particleA, uTime)
+    * shardAlphaValue(particleA, particleC, uTime)
+    * particleMask;
+  float shardAlpha = clamp(shardAlphaValue(particleA, particleC, uTime) * particleMask, 0.0, 1.0);
+  alpha = 1.0 - (1.0 - alpha) * (1.0 - shardAlpha);
 }
 
 vec2 rotate2d(vec2 point, float angle) {
@@ -322,81 +354,39 @@ vec3 screenBlend(vec3 base, vec3 blend) {
   return 1.0 - (1.0 - base) * (1.0 - blend);
 }
 
-vec3 mixFinalLayers(vec3 mainArcLayer, vec3 coreDiskLayer, vec3 fragmentLayer, vec3 weights, float mode, float gain) {
+float saturate01(float value) {
+  return clamp(value, 0.0, 1.0);
+}
+
+float unionAlpha(float a, float b) {
+  return 1.0 - (1.0 - saturate01(a)) * (1.0 - saturate01(b));
+}
+
+float mixFinalAlpha(vec3 weights, float arcAlpha, float diskAlpha, float shardsAlpha) {
+  vec3 alphaWeights = clamp(weights, vec3(0.0), vec3(1.0));
+  float mixed = 0.0;
+  mixed = unionAlpha(mixed, arcAlpha * alphaWeights.x);
+  mixed = unionAlpha(mixed, diskAlpha * alphaWeights.y);
+  mixed = unionAlpha(mixed, shardsAlpha * alphaWeights.z);
+  return mixed;
+}
+
+vec3 mixFinalLayers(vec3 arcLayer, vec3 diskLayer, vec3 shardsLayer, vec3 weights, float mode, float gain) {
   vec3 clampedWeights = max(weights, vec3(0.0));
-  vec3 weightedMainArc = clamp(mainArcLayer, 0.0, 1.0) * clampedWeights.x;
-  vec3 weightedCoreDisk = clamp(coreDiskLayer, 0.0, 1.0) * clampedWeights.y;
-  vec3 weightedFragments = clamp(fragmentLayer, 0.0, 1.0) * clampedWeights.z;
+  vec3 weightedArc = max(arcLayer, vec3(0.0)) * clampedWeights.x;
+  vec3 weightedDisk = max(diskLayer, vec3(0.0)) * clampedWeights.y;
+  vec3 weightedShards = max(shardsLayer, vec3(0.0)) * clampedWeights.z;
   vec3 mixed = vec3(0.0);
 
   if (mode < 0.5) {
-    float totalWeight = clampedWeights.x + clampedWeights.y + clampedWeights.z;
-    if (totalWeight > 0.0001) {
-      mixed = (weightedMainArc + weightedCoreDisk + weightedFragments) / totalWeight;
-    }
+    mixed = weightedArc + weightedDisk + weightedShards;
   } else if (mode < 1.5) {
-    mixed = weightedMainArc + weightedCoreDisk + weightedFragments;
-  } else if (mode < 2.5) {
-    mixed = screenBlend(screenBlend(weightedCoreDisk, weightedMainArc), weightedFragments);
+    mixed = screenBlend(screenBlend(weightedDisk, weightedArc), weightedShards);
   } else {
-    mixed = max(weightedMainArc, max(weightedCoreDisk, weightedFragments));
+    mixed = max(weightedArc, max(weightedDisk, weightedShards));
   }
 
   return mixed * max(gain, 0.0);
-}
-
-vec3 fragmentThemeColor(vec4 particleA, float time) {
-  return mix(
-    clamp(uFragmentHighlightColor, 0.0, 1.0),
-    clamp(uThemeColor, 0.0, 1.0),
-    fragmentColorProgress(particleA, time)
-  );
-}
-
-void accumulateFragmentColor(
-  inout vec3 color,
-  vec2 point,
-  float baseSize,
-  vec4 particleA,
-  vec4 particleB,
-  vec4 particleC,
-  float useLifetimeScale
-) {
-  float particleMask = sampleFragmentParticle(
-    particleA,
-    particleB,
-    particleC,
-    point,
-    baseSize,
-    uTime,
-    useLifetimeScale
-  );
-  if (particleMask <= 0.0) {
-    return;
-  }
-
-  color += fragmentThemeColor(particleA, uTime)
-    * fragmentAlphaValue(particleA, particleC, uTime)
-    * particleMask;
-}
-
-float accumulateFragmentMask(
-  vec2 point,
-  float baseSize,
-  float useLifetimeScale
-) {
-  float fragmentMask = 0.0;
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA2, uFragmentParticleB2, uFragmentParticleC2, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA3, uFragmentParticleB3, uFragmentParticleC3, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA4, uFragmentParticleB4, uFragmentParticleC4, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA5, uFragmentParticleB5, uFragmentParticleC5, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA6, uFragmentParticleB6, uFragmentParticleC6, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA7, uFragmentParticleB7, uFragmentParticleC7, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA8, uFragmentParticleB8, uFragmentParticleC8, point, baseSize, uTime, useLifetimeScale);
-  fragmentMask += sampleFragmentParticle(uFragmentParticleA9, uFragmentParticleB9, uFragmentParticleC9, point, baseSize, uTime, useLifetimeScale);
-  return fragmentMask;
 }
 
 void main() {
@@ -406,208 +396,94 @@ void main() {
   );
   vec2 effectLocal = baseLocal / max(uEffectScale, 0.0001);
 
-  float mainArcVisible = uBranchVisibility.x;
-  float coreDiskVisible = uBranchVisibility.y;
-  float mainFxVisible = uBranchVisibility.z;
-  float fragmentsVisible = uBranchVisibility.w;
-  vec3 coreColor = vec3(0.0);
-  vec3 fragmentColor = vec3(0.0);
-  float arcIntensity = 0.0;
-
   float compositeEnd = uBurstTiming.y + uBurstTiming.z;
   float compositeDuration = max(compositeEnd - uBurstTiming.x, 0.0001);
-  float compositeWindow = max(compositeDuration * max(uCompositeScaleParams.z, 0.0001), 0.0001);
+  float compositeWindow = max(compositeDuration * max(uCompositorScaleData.z, 0.0001), 0.0001);
   float compositeProgress = clamp((uTime - uBurstTiming.x) / compositeWindow, 0.0, 1.0);
-  float compositeScale = mix(uCompositeScaleParams.x, uCompositeScaleParams.y, easeOutCubic(compositeProgress));
+  float compositeScale = mix(uCompositorScaleData.x, uCompositorScaleData.y, easeOutCubic(compositeProgress));
   vec2 compositeLocal = effectLocal / max(compositeScale, 0.0001);
 
-  if (coreDiskVisible > 0.0) {
-    float burstProgress = clamp((uTime - uBurstTiming.x) / max(uBurstTiming.z, 0.0001), 0.0, 1.0);
-    float baseCircleBlur = mix(0.0015, 0.02, clamp(uBurstCoreData.y, 0.0, 1.0));
-    float bBaseMask = circleMask(compositeLocal, uBurstCoreData.x, baseCircleBlur);
-    vec3 baseCircleColor = clamp(uCoreDiskColor, 0.0, 1.0) * bBaseMask;
-    float scaleProgress = clamp(burstProgress / max(uBurstCoreAnimData.z, 0.0001), 0.0, 1.0);
-    float bScaleValue = mix(uBurstCoreAnimData.x, uBurstCoreAnimData.y, easeOutCubic(scaleProgress));
-    float bScaleMask = circleMask(compositeLocal / max(bScaleValue, 0.0001), uBurstCoreData.x, baseCircleBlur);
-    vec3 scaledCircleColor = clamp(uCoreDiskColor, 0.0, 1.0) * bScaleMask;
-    float alphaProgress = clamp(
-      (burstProgress - uBurstCoreToneData.z) / max(1.0 - uBurstCoreToneData.z, 0.0001),
-      0.0,
-      1.0
-    );
-    float bAlphaValue = mix(uBurstCoreToneData.x, uBurstCoreToneData.y, easeOutCubic(alphaProgress));
-    float bAlphaMask = bScaleMask * bAlphaValue;
-
-    if (uCorePreviewStage < 0.5) {
-      coreColor += baseCircleColor;
-    } else if (uCorePreviewStage < 1.5) {
-      coreColor += scaledCircleColor;
-    } else if (uCorePreviewStage < 2.5) {
-      coreColor += vec3(bAlphaMask);
-    } else {
-      coreColor += scaledCircleColor * bAlphaValue;
-    }
-  }
-
-  if (fragmentsVisible > 0.0) {
-    vec2 spriteLocal = effectLocal / max(0.05 * max(uBurstFragmentData.x, 0.0001), 0.0001);
-    float fragmentBurstProgress = clamp((uTime - uBurstTiming.x) / max(uBurstTiming.w, 0.0001), 0.0, 1.0);
-    float d9Scale = fragmentInitScale(fragmentBurstProgress);
-    vec2 d9Local = effectLocal / max(d9Scale, 0.0001);
-    float fragmentMask = 0.0;
-
-    if (uFragmentPreviewStage < 0.5) {
-      fragmentMask = triangleMask(spriteLocal, 0.04);
-    } else if (uFragmentPreviewStage < 1.5) {
-      spriteLocal.y *= -1.0;
-      fragmentMask = triangleMask(spriteLocal, 0.04);
-    } else if (uFragmentPreviewStage < 2.5) {
-      vec2 upLocal = spriteLocal + vec2(1.15, 0.0);
-      vec2 downLocal = spriteLocal - vec2(1.15, 0.0);
-      downLocal.y *= -1.0;
-      fragmentMask = triangleMask(upLocal, 0.04) + triangleMask(downLocal, 0.04);
-    } else if (uFragmentPreviewStage < 3.5) {
-      fragmentMask = donutMask(effectLocal, uBurstFragmentData.y, uBurstFragmentData.z, 0.0035);
-    } else if (uFragmentPreviewStage < 4.5) {
-      fragmentMask = particleDistributionMap(effectLocal, uBurstFragmentData.y, uBurstFragmentData.z);
-    } else if (uFragmentPreviewStage < 5.5) {
-      fragmentMask = accumulateFragmentMask(effectLocal, uBurstFragmentData.x, 0.0);
-    } else if (uFragmentPreviewStage < 6.5) {
-      fragmentMask = accumulateFragmentMask(effectLocal, uBurstFragmentData.x, 1.0);
-    } else if (uFragmentPreviewStage < 7.5) {
-      float particleMask = sampleFragmentParticle(uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA0, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA1, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA2, uFragmentParticleB2, uFragmentParticleC2, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA2, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA3, uFragmentParticleB3, uFragmentParticleC3, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA3, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA4, uFragmentParticleB4, uFragmentParticleC4, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA4, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA5, uFragmentParticleB5, uFragmentParticleC5, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA5, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA6, uFragmentParticleB6, uFragmentParticleC6, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA6, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA7, uFragmentParticleB7, uFragmentParticleC7, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA7, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA8, uFragmentParticleB8, uFragmentParticleC8, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA8, uTime) * particleMask;
-      particleMask = sampleFragmentParticle(uFragmentParticleA9, uFragmentParticleB9, uFragmentParticleC9, effectLocal, uBurstFragmentData.x, uTime, 1.0);
-      fragmentColor += fragmentThemeColor(uFragmentParticleA9, uTime) * particleMask;
-    } else if (uFragmentPreviewStage < 8.5) {
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA2, uFragmentParticleB2, uFragmentParticleC2, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA3, uFragmentParticleB3, uFragmentParticleC3, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA4, uFragmentParticleB4, uFragmentParticleC4, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA5, uFragmentParticleB5, uFragmentParticleC5, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA6, uFragmentParticleB6, uFragmentParticleC6, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA7, uFragmentParticleB7, uFragmentParticleC7, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA8, uFragmentParticleB8, uFragmentParticleC8, 1.0);
-      accumulateFragmentColor(fragmentColor, effectLocal, uBurstFragmentData.x, uFragmentParticleA9, uFragmentParticleB9, uFragmentParticleC9, 1.0);
-    } else {
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA2, uFragmentParticleB2, uFragmentParticleC2, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA3, uFragmentParticleB3, uFragmentParticleC3, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA4, uFragmentParticleB4, uFragmentParticleC4, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA5, uFragmentParticleB5, uFragmentParticleC5, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA6, uFragmentParticleB6, uFragmentParticleC6, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA7, uFragmentParticleB7, uFragmentParticleC7, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA8, uFragmentParticleB8, uFragmentParticleC8, 1.0);
-      accumulateFragmentColor(fragmentColor, d9Local, uBurstFragmentData.x, uFragmentParticleA9, uFragmentParticleB9, uFragmentParticleC9, 1.0);
-    }
-
-    if (uFragmentPreviewStage < 6.5) {
-      fragmentColor += vec3(fragmentMask);
-    }
-  }
-
-  if (mainArcVisible > 0.0) {
-    float a3SourceMask = 0.0;
-    a3SourceMask += sampleParticle(uParticleA0, uParticleB0, uParticleC0, compositeLocal, uTime);
-    a3SourceMask += sampleParticle(uParticleA1, uParticleB1, uParticleC1, compositeLocal, uTime);
-    a3SourceMask += sampleParticle(uParticleA2, uParticleB2, uParticleC2, compositeLocal, uTime);
-
-    float a1Mask = circleMask(
-      vec2(
-        compositeLocal.x / max(uParticleC0.x, 0.0001),
-        compositeLocal.y / max(uParticleC0.y, 0.0001)
-      ),
-      uParticleB0.w,
-      0.0025
-    );
-
-    vec2 warpLocal = compositeLocal;
-    float warpRadialDistance = length(warpLocal);
-    float warpAngle = atan(warpLocal.y, warpLocal.x);
-    float halfAngle = uArcData.x * 0.5;
-    float arcCenterAngle = 1.57079633;
-    float warpAngleDiff = atan(sin(warpAngle - arcCenterAngle), cos(warpAngle - arcCenterAngle));
-    float a4Mask = 0.0;
-
-    if (abs(warpAngleDiff) <= halfAngle) {
-      float angleT = (warpAngleDiff + halfAngle) / max(2.0 * halfAngle, 0.0001);
-      float sourceX = warpRadialDistance - uArcData.y;
-      float sourceY = mix(uArcSourceBounds.z, uArcSourceBounds.w, angleT);
-      float sourceSpan = max(uArcSourceBounds.w - uArcSourceBounds.z, 0.0);
-      float sourceStep = max(sourceSpan / 40.0, 0.004);
-
-      if (sourceX >= uArcSourceBounds.x && sourceX <= uArcSourceBounds.y) {
-        vec2 sourcePoint = vec2(sourceX, sourceY);
-        a4Mask += sampleMainArcSource(sourcePoint, sourceStep, uTime);
-      }
-    }
-
-    vec2 local = compositeLocal;
-    float rotationAngle = max(uTime - uBurstTiming.y, 0.0) * uArcData.z;
-    float initialAngle = uBurstCoreAnimData.w;
-    local = rotate2d(local, -(initialAngle + rotationAngle));
-    local.x *= -1.0;
-
-    float radialDistance = length(local);
-    float angle = atan(local.y, local.x);
-    float angleDiff = atan(sin(angle - arcCenterAngle), cos(angle - arcCenterAngle));
-
-    if (abs(angleDiff) <= halfAngle) {
-      float angleT = (angleDiff + halfAngle) / max(2.0 * halfAngle, 0.0001);
-      float sourceX = radialDistance - uArcData.y;
-      float sourceY = mix(uArcSourceBounds.z, uArcSourceBounds.w, angleT);
-      float sourceSpan = max(uArcSourceBounds.w - uArcSourceBounds.z, 0.0);
-      float sourceStep = max(sourceSpan / 40.0, 0.004);
-
-      if (sourceX >= uArcSourceBounds.x && sourceX <= uArcSourceBounds.y) {
-        vec2 sourcePoint = vec2(sourceX, sourceY);
-        arcIntensity += sampleMainArcSource(sourcePoint, sourceStep, uTime);
-      }
-    }
-
-    if (uMainArcPreviewStage < 0.5) {
-      arcIntensity = a1Mask;
-    } else if (uMainArcPreviewStage < 1.5) {
-      arcIntensity = a3SourceMask;
-    } else if (uMainArcPreviewStage < 2.5) {
-      arcIntensity = a4Mask;
-    }
-  }
-
-  vec3 arcLayer = clamp(uThemeColor * arcIntensity, 0.0, 1.0);
-  if (uMainArcPreviewStage < 3.5) {
-    arcLayer = vec3(arcIntensity);
-  }
-  vec3 mainArcLayer = clamp(arcLayer * mainFxVisible, 0.0, 1.0);
-  vec3 coreDiskLayer = clamp(coreColor * mainFxVisible, 0.0, 1.0);
-  vec3 fragmentLayer = clamp(fragmentColor, 0.0, 1.0);
-  vec3 finalColor = mixFinalLayers(
-    mainArcLayer,
-    coreDiskLayer,
-    fragmentLayer,
-    uFinalMixerWeights,
-    uFinalMixerParams.x,
-    uFinalMixerParams.y
+  float diskBurstProgress = clamp((uTime - uBurstTiming.x) / max(uBurstTiming.z, 0.0001), 0.0, 1.0);
+  float diskBlur = mix(0.0015, 0.02, clamp(uDiskShapeData.y, 0.0, 1.0));
+  float diskScaleProgress = clamp(diskBurstProgress / max(uDiskScaleData.z, 0.0001), 0.0, 1.0);
+  float diskScaleValue = mix(uDiskScaleData.x, uDiskScaleData.y, easeOutCubic(diskScaleProgress));
+  float diskScaledMask = circleMask(compositeLocal / max(diskScaleValue, 0.0001), uDiskShapeData.x, diskBlur);
+  float diskAlphaProgress = clamp(
+    (diskBurstProgress - uDiskAlphaData.z) / max(1.0 - uDiskAlphaData.z, 0.0001),
+    0.0,
+    1.0
   );
-  finalColor = clamp(finalColor, 0.0, 1.0);
-  float alpha = clamp(max(finalColor.r, max(finalColor.g, finalColor.b)), 0.0, 1.0);
-  gl_FragColor = vec4(finalColor, alpha);
+  float diskAlphaValue = mix(uDiskAlphaData.x, uDiskAlphaData.y, easeOutCubic(diskAlphaProgress));
+  float diskAlpha = saturate01(diskScaledMask * diskAlphaValue);
+  vec3 diskLayer = max(uDiskColor, vec3(0.0)) * diskAlpha;
+
+  float arcIntensity = 0.0;
+  vec2 arcLocal = compositeLocal;
+  float rotationAngle = max(uTime - uBurstTiming.y, 0.0) * uArcData.z;
+  float initialAngle = uDiskScaleData.w;
+  arcLocal = rotate2d(arcLocal, -(initialAngle + rotationAngle));
+  arcLocal.x *= -1.0;
+
+  float radialDistance = length(arcLocal);
+  float angle = atan(arcLocal.y, arcLocal.x);
+  float arcCenterAngle = 1.57079633;
+  float halfAngle = uArcData.x * 0.5;
+  float angleDiff = atan(sin(angle - arcCenterAngle), cos(angle - arcCenterAngle));
+
+  if (abs(angleDiff) <= halfAngle) {
+    float angleT = (angleDiff + halfAngle) / max(2.0 * halfAngle, 0.0001);
+    float sourceX = radialDistance - uArcData.y;
+    float sourceY = mix(uArcSourceBounds.z, uArcSourceBounds.w, angleT);
+    float sourceSpan = max(uArcSourceBounds.w - uArcSourceBounds.z, 0.0);
+    float sourceStep = max(sourceSpan / 40.0, 0.004);
+
+    if (sourceX >= uArcSourceBounds.x && sourceX <= uArcSourceBounds.y) {
+      arcIntensity = sampleArcSource(vec2(sourceX, sourceY), sourceStep, uTime);
+    }
+  }
+
+  float arcAlpha = saturate01(arcIntensity * uArcAlphaData.x);
+  vec3 arcLayer = max(uArcColor, vec3(0.0)) * max(arcIntensity * uArcAlphaData.x, 0.0);
+
+  float shardBurstProgress = clamp((uTime - uBurstTiming.x) / max(uBurstTiming.w, 0.0001), 0.0, 1.0);
+  float shardsInit = shardsInitScale(shardBurstProgress);
+  vec2 shardsLocal = effectLocal / max(shardsInit, 0.0001);
+  vec3 shardsLayer = vec3(0.0);
+  float shardsAlpha = 0.0;
+
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA0, uFragmentParticleB0, uFragmentParticleC0);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA1, uFragmentParticleB1, uFragmentParticleC1);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA2, uFragmentParticleB2, uFragmentParticleC2);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA3, uFragmentParticleB3, uFragmentParticleC3);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA4, uFragmentParticleB4, uFragmentParticleC4);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA5, uFragmentParticleB5, uFragmentParticleC5);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA6, uFragmentParticleB6, uFragmentParticleC6);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA7, uFragmentParticleB7, uFragmentParticleC7);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA8, uFragmentParticleB8, uFragmentParticleC8);
+  accumulateShardColor(shardsLayer, shardsAlpha, shardsLocal, uShardsShapeData.x, uFragmentParticleA9, uFragmentParticleB9, uFragmentParticleC9);
+
+  vec3 finalColor = mixFinalLayers(
+    arcLayer,
+    diskLayer,
+    shardsLayer,
+    uMixerWeights.xyz,
+    uMixerParams.x,
+    uMixerParams.y
+  );
+  float finalAlpha = mixFinalAlpha(uMixerWeights.xyz, arcAlpha, diskAlpha, shardsAlpha);
+
+  if (uPreviewMode < 0.5) {
+    finalColor = finalColor;
+  } else if (uPreviewMode < 1.5) {
+    finalColor = arcLayer;
+    finalAlpha = arcAlpha;
+  } else if (uPreviewMode < 2.5) {
+    finalColor = diskLayer;
+    finalAlpha = diskAlpha;
+  } else {
+    finalColor = shardsLayer;
+    finalAlpha = shardsAlpha;
+  }
+
+  gl_FragColor = vec4(max(finalColor, vec3(0.0)), saturate01(finalAlpha));
 }

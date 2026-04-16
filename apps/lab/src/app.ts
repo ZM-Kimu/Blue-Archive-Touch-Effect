@@ -1,30 +1,77 @@
 import {
-  applyRuntimeConfigConstraints,
   createClickFx,
   type ClickFxInstance,
+  type ColorRgb,
+  type LayerPreviewMode,
   type RuntimeConfig,
+  type RuntimeConfigPatch,
 } from 'blue-archive-touch-effect'
-import {
-  defaultBranchVisibility,
-  defaultConfig,
-  defaultCorePreviewStage,
-  defaultFragmentPreviewStage,
-  defaultMainArcPreviewStage,
-} from './lab-config'
+import { defaultConfig } from './lab-config'
 import { createDebugPanel } from './ui'
-import type {
-  BranchKey,
-  BranchVisibility,
-  CorePreviewStage,
-  FragmentPreviewStage,
-  LabAppearanceState,
-  LabRuntimeDebugState,
-  MainArcPreviewStage,
-  NumericRuntimeKey,
-} from './types'
+import type { ConfigPath, LabAppearanceState } from './types'
 
 type LabClickFxInstance = ClickFxInstance & {
-  setDebugState: (partial: Partial<LabRuntimeDebugState>) => void
+  setDebugState: (partial: { previewMode?: LayerPreviewMode }) => void
+}
+
+const cloneValue = <T>(value: T): T =>
+{
+  if (Array.isArray(value))
+  {
+    return value.map((entry) => cloneValue(entry)) as T
+  }
+
+  if (typeof value === 'object' && value !== null)
+  {
+    const clone: Record<string, unknown> = {}
+    Object.entries(value as Record<string, unknown>).forEach(([key, entry]) =>
+    {
+      clone[key] = cloneValue(entry)
+    })
+    return clone as T
+  }
+
+  return value
+}
+
+const getPathValue = (config: RuntimeConfig, path: ConfigPath): unknown =>
+  path.split('.').reduce<unknown>((current, key) => (current as Record<string, unknown>)[key], config as unknown)
+
+const setPathValue = (config: RuntimeConfig, path: ConfigPath, value: unknown) =>
+{
+  const segments = path.split('.')
+  const last = segments.pop()
+  if (!last)
+  {
+    return
+  }
+
+  const target = segments.reduce<Record<string, unknown>>(
+    (current, key) => current[key] as Record<string, unknown>,
+    config as unknown as Record<string, unknown>
+  )
+  target[last] = value
+}
+
+const buildPatch = (path: ConfigPath, value: unknown): RuntimeConfigPatch =>
+{
+  const segments = path.split('.')
+  const root: Record<string, unknown> = {}
+  let current = root
+
+  segments.forEach((segment, index) =>
+  {
+    if (index === segments.length - 1)
+    {
+      current[segment] = cloneValue(value)
+      return
+    }
+
+    current[segment] = {}
+    current = current[segment] as Record<string, unknown>
+  })
+
+  return root as RuntimeConfigPatch
 }
 
 export const bootstrapClickFx = () =>
@@ -36,73 +83,47 @@ export const bootstrapClickFx = () =>
     throw new Error('App root not found')
   }
 
-  const config: RuntimeConfig = { ...defaultConfig }
-  const branchVisibility: BranchVisibility = { ...defaultBranchVisibility }
+  const config: RuntimeConfig = cloneValue(defaultConfig)
   const appearance: LabAppearanceState = {
     backgroundColor: '#000000',
   }
-  let mainArcPreviewStage: MainArcPreviewStage = defaultMainArcPreviewStage
-  let corePreviewStage: CorePreviewStage = defaultCorePreviewStage
-  let fragmentPreviewStage: FragmentPreviewStage = defaultFragmentPreviewStage
+  let previewMode: LayerPreviewMode = 'composite'
 
   const panelController = createDebugPanel({
     app,
     config,
-    branchVisibility,
-    getMainArcPreviewStage: () => mainArcPreviewStage,
-    getCorePreviewStage: () => corePreviewStage,
-    getFragmentPreviewStage: () => fragmentPreviewStage,
-    getThemeColor: () => config.themeColor,
-    getCoreDiskColor: () => config.coreDiskColor,
+    getPreviewMode: () => previewMode,
     getBackgroundColor: () => appearance.backgroundColor,
-    onControlChange: (key: NumericRuntimeKey, value) =>
+    readPath: (path) => getPathValue(config, path),
+    onNumberChange: (path, value) =>
     {
-      config[key] = value
-      applyRuntimeConfigConstraints(config, key)
-      syncControls()
+      setPathValue(config, path, value)
+      runtime.updateConfig(buildPatch(path, value))
+      panelController.sync()
     },
-    onSelectChange: (key, value) =>
+    onSelectChange: (path, value) =>
     {
-      config[key] = value
-      applyRuntimeConfigConstraints(config, key)
-      syncControls()
+      setPathValue(config, path, value)
+      runtime.updateConfig(buildPatch(path, value))
+      panelController.sync()
     },
-    onVisibilityChange: (key: BranchKey, value: boolean) =>
+    onColorChange: (path, value: ColorRgb) =>
     {
-      branchVisibility[key] = value
-      syncControls()
+      setPathValue(config, path, value)
+      runtime.updateConfig(buildPatch(path, value))
+      panelController.sync()
     },
-    onMainArcPreviewChange: (value) =>
+    onPreviewModeChange: (value) =>
     {
-      mainArcPreviewStage = value
-      syncControls()
-    },
-    onCorePreviewChange: (value) =>
-    {
-      corePreviewStage = value
-      syncControls()
-    },
-    onFragmentPreviewChange: (value) =>
-    {
-      fragmentPreviewStage = value
-      syncControls()
-    },
-    onThemeColorChange: (value) =>
-    {
-      config.themeColor = value
-      applyRuntimeConfigConstraints(config, 'themeColor')
-      syncControls()
-    },
-    onCoreDiskColorChange: (value) =>
-    {
-      config.coreDiskColor = value
-      applyRuntimeConfigConstraints(config, 'coreDiskColor')
-      syncControls()
+      previewMode = value
+      runtime.setDebugState({ previewMode })
+      panelController.sync()
     },
     onBackgroundColorChange: (value) =>
     {
       appearance.backgroundColor = value
-      syncControls()
+      stage.style.backgroundColor = appearance.backgroundColor
+      panelController.sync()
     },
   })
 
@@ -119,13 +140,7 @@ export const bootstrapClickFx = () =>
   const syncControls = () =>
   {
     stage.style.backgroundColor = appearance.backgroundColor
-    runtime.updateConfig({ ...config })
-    runtime.setDebugState({
-      branchVisibility: { ...branchVisibility },
-      mainArcPreviewStage,
-      corePreviewStage,
-      fragmentPreviewStage,
-    })
+    runtime.setDebugState({ previewMode })
     panelController.sync()
   }
 
@@ -145,6 +160,5 @@ export const bootstrapClickFx = () =>
   }
 
   panelController.shell.addEventListener('mousedown', handlePressSpawn)
-
   syncControls()
 }

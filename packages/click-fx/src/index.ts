@@ -1,10 +1,26 @@
-export { applyRuntimeConfigConstraints, defaultRuntimeConfig } from './config'
+export {
+  applyRuntimeConfigConstraints,
+  cloneRuntimeConfig,
+  createRuntimeConfig,
+  defaultRuntimeConfig,
+  mergeRuntimeConfig,
+} from './config'
 export { createClickFx } from './runtime'
-export { finalMixerModes, tonemappingModes } from './types'
+export { bloomDownscaleModes, layerPreviewModes, mixerModes, tonemappingModes } from './types'
 export type {
+  ArcConfig,
+  BloomDownscaleMode,
   ClickFxInstance,
+  ColorRgb,
+  CompositorConfig,
   CreateClickFxOptions,
-  FinalMixerMode,
+  DiskConfig,
+  LayerPreviewMode,
+  MixerConfig,
+  MixerMode,
+  PostfxConfig,
+  RuntimeConfigPatch,
   RuntimeConfig,
+  ShardsConfig,
   TonemappingMode,
 } from './types'

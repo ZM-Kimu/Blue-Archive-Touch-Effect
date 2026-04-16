@@ -1,6 +1,24 @@
-import { BOUNDS_SAMPLE_COUNT, FRAGMENT_PARTICLES_PER_BURST, MAX_BURSTS, PARTICLES_PER_BURST } from './constants'
-import { easeInOutSine, easeInQuad, randomBetween, randomIntInclusive, randomSigned } from './math'
-import type { BurstBounds, BurstState, BurstStore, DebugState, FragmentParticleState, ParticleState } from './types'
+import {
+  BOUNDS_SAMPLE_COUNT,
+  FRAGMENT_PARTICLES_PER_BURST,
+  MAX_BURSTS,
+  PARTICLES_PER_BURST,
+} from './constants'
+import {
+  easeInOutSine,
+  easeInQuad,
+  randomBetween,
+  randomIntInclusive,
+  randomSigned,
+} from './math'
+import type {
+  BurstBounds,
+  BurstState,
+  BurstStore,
+  FragmentParticleState,
+  ParticleState,
+  RuntimeConfig,
+} from './types'
 
 const createParticleState = (): ParticleState => ({
   startTime: -100,
@@ -26,7 +44,7 @@ const createFragmentParticleState = (): FragmentParticleState => ({
   rotation: 0,
   spriteIndex: 0,
   sizeMultiplier: 1,
-  flashPeriod: 0.1,
+  flashTimeWarp: 0.1,
   enabled: 0,
 })
 
@@ -34,25 +52,32 @@ const createBurstState = (): BurstState => ({
   originX: 0.5,
   originY: 0.5,
   startTime: -100,
-  branchAStartTime: -100,
+  arcStartTime: -100,
   arcInitialAngle: 0,
   duration: 0,
   active: 0,
-  coreDiskRadius: 0,
-  coreDiskSoftness: 1,
-  coreDiskScaleStart: 0.25,
-  coreDiskScaleEnd: 1,
-  coreDiskScaleTimeFraction: 0.5,
-  coreDiskAlphaStart: 1,
-  coreDiskAlphaEnd: 0,
-  coreDiskAlphaFadeStartFraction: 0.3,
-  dTriangleSize: 0.53,
-  d3OuterRadius: 0.203,
-  d3InnerRadius: 0.098,
-  fragmentDuration: 0,
-  fragmentParticles: Array.from({ length: FRAGMENT_PARTICLES_PER_BURST }, createFragmentParticleState),
-  particles: Array.from({ length: PARTICLES_PER_BURST }, createParticleState),
+  diskRadius: 0,
+  diskSoftness: 1,
+  diskScaleStart: 0.25,
+  diskScaleEnd: 1,
+  diskScaleTimeFraction: 0.3,
+  diskAlphaStart: 1,
+  diskAlphaEnd: 0,
+  diskAlphaFadeStartFraction: 0.3,
+  shardsTriangleSize: 0.53,
+  shardsOuterRadius: 0.25,
+  shardsInnerRadius: 0.098,
+  shardsDuration: 0,
+  shardParticles: Array.from({ length: FRAGMENT_PARTICLES_PER_BURST }, createFragmentParticleState),
+  arcParticles: Array.from({ length: PARTICLES_PER_BURST }, createParticleState),
   bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
+})
+
+const createBounds = (minX = 0, maxX = 0, minY = 0, maxY = 0): BurstBounds => ({
+  minX,
+  maxX,
+  minY,
+  maxY,
 })
 
 const resetParticle = (particle: ParticleState) =>
@@ -81,7 +106,7 @@ const resetFragmentParticle = (particle: FragmentParticleState) =>
   particle.rotation = 0
   particle.spriteIndex = 0
   particle.sizeMultiplier = 1
-  particle.flashPeriod = 0.1
+  particle.flashTimeWarp = 0.1
   particle.enabled = 0
 }
 
@@ -93,13 +118,6 @@ const resetBurstBounds = (burst: BurstState) =>
   burst.bounds.maxY = 0
 }
 
-const createBounds = (minX = 0, maxX = 0, minY = 0, maxY = 0): BurstBounds => ({
-  minX,
-  maxX,
-  minY,
-  maxY,
-})
-
 const precomputeBurstBounds = (burst: BurstState) =>
 {
   let hasParticle = false
@@ -108,7 +126,7 @@ const precomputeBurstBounds = (burst: BurstState) =>
   let minY = Infinity
   let maxY = -Infinity
 
-  burst.particles.forEach((particle) =>
+  burst.arcParticles.forEach((particle) =>
   {
     if (!particle.enabled || particle.duration <= 0)
     {
@@ -172,7 +190,7 @@ export const createBurstStore = (): BurstStore => ({
 
 export const spawnBurst = (
   store: BurstStore,
-  config: DebugState,
+  config: RuntimeConfig,
   currentTime: number,
   clientX: number,
   clientY: number,
@@ -184,98 +202,104 @@ export const spawnBurst = (
   const burst = store.bursts[burstIndex]
   const originX = clientX / viewportWidth
   const originY = 1 - clientY / viewportHeight
-  const count = randomIntInclusive(config.minCount, config.maxCount)
-  const fragmentCount = randomIntInclusive(config.d5CountMin, config.d5CountMax)
+  const arcCount = randomIntInclusive(config.arc.emitter.minCount, config.arc.emitter.maxCount)
+  const shardCount = randomIntInclusive(config.shards.burst.countMin, config.shards.burst.countMax)
 
   burst.originX = originX
   burst.originY = originY
   burst.startTime = currentTime
-  burst.branchAStartTime = currentTime
   burst.arcInitialAngle = randomBetween(0, Math.PI * 2)
   burst.duration = 0
   burst.active = 1
-  burst.coreDiskRadius = config.coreDiskRadius
-  burst.coreDiskSoftness = config.coreDiskSoftness
-  burst.coreDiskScaleStart = config.coreDiskScaleStart
-  burst.coreDiskScaleEnd = config.coreDiskScaleEnd
-  burst.coreDiskScaleTimeFraction = config.coreDiskScaleTimeFraction
-  burst.coreDiskAlphaStart = config.coreDiskAlphaStart
-  burst.coreDiskAlphaEnd = config.coreDiskAlphaEnd
-  burst.coreDiskAlphaFadeStartFraction = config.coreDiskAlphaFadeStartFraction
-  burst.dTriangleSize = config.dTriangleSize
-  burst.d3OuterRadius = config.d3OuterRadius
-  burst.d3InnerRadius = config.d3InnerRadius
-  burst.fragmentDuration = 0
+
+  burst.diskRadius = config.disk.shape.radius
+  burst.diskSoftness = config.disk.shape.softness
+  burst.diskScaleStart = config.disk.scale.start
+  burst.diskScaleEnd = config.disk.scale.end
+  burst.diskScaleTimeFraction = config.disk.scale.timeFraction
+  burst.diskAlphaStart = config.disk.alpha.start
+  burst.diskAlphaEnd = config.disk.alpha.end
+  burst.diskAlphaFadeStartFraction = config.disk.alpha.fadeStartFraction
+
+  burst.shardsTriangleSize = config.shards.shape.triangleSize
+  burst.shardsOuterRadius = config.shards.distribution.outerRadius
+  burst.shardsInnerRadius = config.shards.distribution.innerRadius
+  burst.shardsDuration = 0
+
   resetBurstBounds(burst)
 
   for (let particleIndex = 0; particleIndex < PARTICLES_PER_BURST; particleIndex += 1)
   {
-    const particle = burst.particles[particleIndex]
+    const particle = burst.arcParticles[particleIndex]
 
-    if (particleIndex >= count)
+    if (particleIndex >= arcCount)
     {
       resetParticle(particle)
       continue
     }
 
-    const scaleMultiplier = randomBetween(config.scaleMin, config.scaleMax)
+    const scaleMultiplier = randomBetween(config.arc.emitter.scaleMin, config.arc.emitter.scaleMax)
 
-    particle.duration = config.duration * scaleMultiplier
-    particle.offsetX = randomSigned(config.randomX)
-    particle.offsetY = randomSigned(config.randomY)
+    particle.duration = config.arc.motion.duration * scaleMultiplier
+    particle.offsetX = randomSigned(config.arc.emitter.randomX)
+    particle.offsetY = randomSigned(config.arc.emitter.randomY)
     particle.scaleMultiplier = scaleMultiplier
-    particle.movementY = config.movementY
-    particle.radius = config.radius
-    particle.scaleX = config.scaleX
-    particle.scaleY = config.scaleY
+    particle.movementY = config.arc.motion.movementY
+    particle.radius = config.arc.source.radius
+    particle.scaleX = config.arc.source.scaleX
+    particle.scaleY = config.arc.source.scaleY
     particle.enabled = 1
 
     burst.duration = Math.max(burst.duration, particle.duration)
   }
 
-  burst.branchAStartTime = burst.startTime + burst.duration * burst.coreDiskScaleTimeFraction
+  const arcDelay = burst.duration
+    * burst.diskScaleTimeFraction
+    * config.compositor.handoff.arcDelayFromDiskScale
 
-  burst.particles.forEach((particle) =>
+  burst.arcStartTime = burst.startTime + arcDelay
+
+  burst.arcParticles.forEach((particle) =>
   {
     if (!particle.enabled)
     {
       return
     }
 
-    particle.startTime = burst.branchAStartTime
+    particle.startTime = burst.arcStartTime
   })
 
-  for (let fragmentIndex = 0; fragmentIndex < FRAGMENT_PARTICLES_PER_BURST; fragmentIndex += 1)
+  for (let particleIndex = 0; particleIndex < FRAGMENT_PARTICLES_PER_BURST; particleIndex += 1)
   {
-    const particle = burst.fragmentParticles[fragmentIndex]
+    const particle = burst.shardParticles[particleIndex]
 
-    if (fragmentIndex >= fragmentCount)
+    if (particleIndex >= shardCount)
     {
       resetFragmentParticle(particle)
       continue
     }
 
     const angle = randomBetween(0, Math.PI * 2)
-    const inner = burst.d3InnerRadius
-    const outer = Math.max(burst.d3OuterRadius, inner)
+    const inner = burst.shardsInnerRadius
+    const outer = Math.max(burst.shardsOuterRadius, inner)
     const radialDistance = Math.sqrt(randomBetween(inner * inner, outer * outer))
     const spawnX = Math.cos(angle) * radialDistance
     const spawnY = Math.sin(angle) * radialDistance
     const directionLength = Math.hypot(spawnX, spawnY) || 1
 
     particle.startTime = currentTime
-    particle.lifetime = randomBetween(config.d5LifetimeMin, config.d5LifetimeMax)
+    particle.lifetime = randomBetween(config.shards.burst.lifetimeMin, config.shards.burst.lifetimeMax)
     particle.spawnX = spawnX
     particle.spawnY = spawnY
     particle.dirX = spawnX / directionLength
     particle.dirY = spawnY / directionLength
-    particle.speed = randomBetween(config.d5SpeedMin, config.d5SpeedMax)
+    particle.speed = randomBetween(config.shards.burst.speedMin, config.shards.burst.speedMax)
     particle.rotation = randomBetween(0, Math.PI * 2)
     particle.spriteIndex = Math.random() < 0.5 ? 0 : 1
-    particle.sizeMultiplier = randomBetween(config.d5SizeMin, config.d5SizeMax)
-    particle.flashPeriod = randomBetween(config.d8FlashPeriodMin, config.d8FlashPeriodMax)
+    particle.sizeMultiplier = randomBetween(config.shards.burst.sizeMin, config.shards.burst.sizeMax)
+    particle.flashTimeWarp = randomBetween(config.shards.alpha.flashTimeWarpMin, config.shards.alpha.flashTimeWarpMax)
     particle.enabled = 1
-    burst.fragmentDuration = Math.max(burst.fragmentDuration, particle.lifetime)
+    burst.shardsDuration = Math.max(burst.shardsDuration, particle.lifetime)
   }
 
   precomputeBurstBounds(burst)
@@ -285,13 +309,13 @@ export const updateBurstActivity = (store: BurstStore, time: number) =>
 {
   store.bursts.forEach((burst) =>
   {
-    const branchBActive = burst.duration > 0
+    const diskActive = burst.duration > 0
       && time >= burst.startTime
       && time <= burst.startTime + burst.duration
-    let hasActiveParticle = false
-    let hasActiveFragmentParticle = false
+    let hasActiveArcParticle = false
+    let hasActiveShardParticle = false
 
-    burst.particles.forEach((particle) =>
+    burst.arcParticles.forEach((particle) =>
     {
       if (!particle.enabled || particle.duration <= 0)
       {
@@ -304,10 +328,10 @@ export const updateBurstActivity = (store: BurstStore, time: number) =>
         return
       }
 
-      hasActiveParticle = true
+      hasActiveArcParticle = true
     })
 
-    burst.fragmentParticles.forEach((particle) =>
+    burst.shardParticles.forEach((particle) =>
     {
       if (!particle.enabled || particle.lifetime <= 0)
       {
@@ -320,10 +344,10 @@ export const updateBurstActivity = (store: BurstStore, time: number) =>
         return
       }
 
-      hasActiveFragmentParticle = true
+      hasActiveShardParticle = true
     })
 
-    if (!branchBActive && !hasActiveParticle && !hasActiveFragmentParticle)
+    if (!diskActive && !hasActiveArcParticle && !hasActiveShardParticle)
     {
       burst.active = 0
       resetBurstBounds(burst)
@@ -336,26 +360,29 @@ export const updateBurstActivity = (store: BurstStore, time: number) =>
 
 export const hasActiveBursts = (store: BurstStore) => store.bursts.some((burst) => burst.active > 0)
 
-export const getBurstMainFxBounds = (burst: BurstState, config: DebugState): BurstBounds =>
+export const getBurstCompositeBounds = (burst: BurstState, config: RuntimeConfig): BurstBounds =>
 {
-  const compositeScaleMax = Math.max(config.c1StartScale, config.c1EndScale)
-  const coreScaleMax = Math.max(burst.coreDiskScaleStart, burst.coreDiskScaleEnd)
-  const coreRadius = burst.coreDiskRadius * coreScaleMax * compositeScaleMax
+  const compositeScaleMax = Math.max(
+    config.compositor.sharedScale.start,
+    config.compositor.sharedScale.end
+  )
+  const diskScaleMax = Math.max(burst.diskScaleStart, burst.diskScaleEnd)
+  const diskRadius = burst.diskRadius * diskScaleMax * compositeScaleMax
   const arcOuterRadius = Math.max(
-    Math.abs(config.arcRadius + burst.bounds.minX),
-    Math.abs(config.arcRadius + burst.bounds.maxX)
+    Math.abs(config.arc.warp.radius + burst.bounds.minX),
+    Math.abs(config.arc.warp.radius + burst.bounds.maxX)
   ) * compositeScaleMax
-  const radius = Math.max(coreRadius, arcOuterRadius) * config.effectScale
+  const radius = Math.max(diskRadius, arcOuterRadius) * config.compositor.effectScale
 
   return createBounds(-radius, radius, -radius, radius)
 }
 
-export const getBurstFragmentBounds = (burst: BurstState, config: DebugState): BurstBounds =>
+export const getBurstShardsBounds = (burst: BurstState, config: RuntimeConfig): BurstBounds =>
 {
   let maxSpeed = 0
   let maxSizeMultiplier = 0
 
-  burst.fragmentParticles.forEach((particle) =>
+  burst.shardParticles.forEach((particle) =>
   {
     if (!particle.enabled)
     {
@@ -366,11 +393,18 @@ export const getBurstFragmentBounds = (burst: BurstState, config: DebugState): B
     maxSizeMultiplier = Math.max(maxSizeMultiplier, particle.sizeMultiplier)
   })
 
-  const d6ScaleMax = Math.max(config.d6StartScale, config.d6PeakScale, config.d6EndScale)
-  const d9ScaleMax = Math.max(config.d9StartScale, config.d9EndScale)
-  const spriteRadius = 0.05 * burst.dTriangleSize * Math.max(maxSizeMultiplier, 1) * d6ScaleMax
-  const centerRadius = burst.d3OuterRadius + maxSpeed
-  const radius = (centerRadius + spriteRadius) * d9ScaleMax * config.effectScale
+  const scaleOverLifeMax = Math.max(
+    config.shards.scaleOverLife.start,
+    config.shards.scaleOverLife.peak,
+    config.shards.scaleOverLife.end
+  )
+  const initScaleMax = Math.max(config.shards.initScale.start, config.shards.initScale.end)
+  const spriteRadius = 0.05
+    * burst.shardsTriangleSize
+    * Math.max(maxSizeMultiplier, 1)
+    * scaleOverLifeMax
+  const centerRadius = burst.shardsOuterRadius + maxSpeed
+  const radius = (centerRadius + spriteRadius) * initScaleMax * config.compositor.effectScale
 
   return createBounds(-radius, radius, -radius, radius)
 }

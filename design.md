@@ -1,487 +1,239 @@
-# Click FX Current Spec
+# Click FX VNext Design
 
-这份文档不再描述“理想中的反推节点图”，而是记录**当前代码真实实现**。
+This document describes the current vNext renderer, not the historical branch-stage graph.
 
-目标是让后续继续迭代时，文档、面板、shader 行为三者保持一致。
-
-## 1. 交互与调试语义
-
-- 页面 `pointerdown` 会生成一次 burst。
-- 大多数生成型参数在**下一次点击**生效。
-- 以下内容是**立即生效**的：
-  - 分支可见性
-  - `Branch B` / `Branch D` 的 preview selector
-  - `A7` 颜色
-  - `C1` 参数
-  - `FinalMixer` 参数
-  - `Filter` 参数
-  - `D8` 的 `Alpha Max / Alpha Min`
-  - `D9` 参数
-- 当前实现中，`Branch B` 和 `Branch D` 的 preview selector 不只是“检查用预览”，它们会直接替换该 branch 在最终画面中的输出。
-  - 默认值已经设置为最终希望的阶段：
-    - `CoreDisk = Final`
-    - `Fragments = D8`
-
-## 2. 当前总流程
+## 1. Canonical Pipeline
 
 ```text
-Branch A = MainArc
-Branch B = CoreDisk
-Branch C = SharedTransform(MainArc, CoreDisk)
-Branch D = Fragments
-FinalFX = FinalMixer(MainArc, CoreDisk, Fragments)
-FX = PostProcess(FinalFX, bloom + tonemapping)
+Click
+  -> BurstState
+  -> Arc emitter
+  -> Disk emitter
+  -> Shared compositor (arc + disk only)
+  -> Shards emitter
+  -> Final mixer
+  -> PostFX
 ```
 
-更准确地说，当前代码是：
+The vNext mental model is layer-based:
+
+- `arc`
+- `disk`
+- `shards`
+- `compositor`
+- `mixer`
+- `postfx`
+
+## 2. Timing Contract
+
+The renderer preserves the previous visual rhythm at a high level:
+
+- disk appears first
+- arc follows the disk handoff timing
+- arc and disk share a compositor transform
+- shards stay outside the shared transform
+- postfx runs after the final mixed color result
+
+## 3. Layer Responsibilities
+
+### Arc
+
+The arc layer owns:
+
+- ellipse source shape
+- source motion
+- emitter randomization and count
+- polar warp
+- rotation
+- final arc color
+- arc alpha multiplier
+
+Public config section:
 
 ```text
-MainArc   = A7
-CoreDisk  = Final        # 默认 preview
-MainFX    = C1
-Fragments = D8           # 默认 preview
-FinalFX   = FinalMixer(MainArcAfterC1, CoreDiskAfterC1, Fragments)
-FX        = BloomTonemap(FinalFX)
+arc.source
+arc.motion
+arc.emitter
+arc.warp
+arc.rotation
+arc.alpha
+arc.color
 ```
 
-## 3. Branch A: MainArc
+### Disk
 
-### A1
+The disk layer owns:
+
+- filled circle silhouette
+- disk softness
+- scale timing
+- alpha timing
+- disk color
+
+Public config section:
 
 ```text
-A1 = EllipsePrefab(
-    radius = 0.10,
-    scale_x = 0.09,
-    scale_y = 1.00
+disk.shape
+disk.scale
+disk.alpha
+disk.color
+```
+
+### Shards
+
+The shards layer owns:
+
+- triangle sprite shape
+- donut-like spawn distribution
+- burst count / speed / lifetime / size
+- scale over life with a fast rise and full-life falloff
+- init scale
+- keyed flashing alpha based on the Unity `Ring (3)` lifetime pattern, with time-warp bounds
+- Unity-style lifetime palette with optional tint and peak boost
+
+Public config section:
+
+```text
+shards.shape
+shards.distribution
+shards.burst
+shards.scaleOverLife
+shards.initScale
+shards.alpha
+shards.color
+```
+
+### Compositor
+
+The compositor does not perform early RGB color mixing.
+
+It owns:
+
+- shared scale timing for arc + disk
+- handoff timing from disk into arc
+- overall effect scale
+
+Public config section:
+
+```text
+compositor.sharedScale
+compositor.handoff
+compositor.effectScale
+```
+
+## 4. Final Mixer
+
+The final mixer is the only place where colored layers are combined.
+
+```text
+FinalColor = mix(
+  ArcColorAfterCompositor,
+  DiskColorAfterCompositor,
+  ShardsColor,
+  mixer
 )
 ```
 
-### A2
+Public config section:
 
 ```text
-A2 = Animate(
-    input = A1,
-    duration = 0.70,
-    movement_y = -0.20,
-    movement_animation = ease-in-out,
-    scale_to = 0,
-    scale_animation = ease-in
-)
+mixer.arcWeight
+mixer.diskWeight
+mixer.shardsWeight
+mixer.mode
+mixer.gain
 ```
 
-说明：
+Supported mixer modes:
 
-- `movement_y` 使用 `ease-in-out`
-- 缩放衰减使用 `ease-in`
-- `duration` 会按粒子随机缩放一起缩放
-- 位移距离也会按粒子随机缩放一起缩放
+- `add`
+- `screen`
+- `max`
 
-### A3
+## 5. PostFX
+
+The post-process pass runs after the final mixer:
 
 ```text
-A3 = Particleize(
-    input = A2,
-    random_x = 0.01,
-    random_y = 0.08,
-    scale_min = 0.53,
-    scale_max = 1.00,
-    min_count = 2,
-    max_count = 3
-)
+FinalColor -> bloom -> tonemapping -> output
 ```
 
-说明：
-
-- 每次点击生成 `2~3` 个实例
-- A3 使用 burst 内预计算包围盒参与后续 polar warp
-
-### A4
+Public config section:
 
 ```text
-A4 = PolarWarp(
-    input = A3,
-    angle_span_deg = 360,
-    radius = 0.177
-)
+postfx.enabled
+postfx.alpha.bloomStrength
+postfx.alpha.bloomClamp
+postfx.bloom.enabled
+postfx.bloom.threshold
+postfx.bloom.intensity
+postfx.bloom.scatter
+postfx.bloom.clamp
+postfx.bloom.tint
+postfx.bloom.highQualityFiltering
+postfx.bloom.downscale
+postfx.bloom.maxIterations
+postfx.tonemapping.mode
 ```
 
-说明：
+Supported tonemapping modes:
 
-- 当前实现已改成按 burst 预计算边界，不再使用固定 `warpHalfHeight`
+- `none`
+- `neutral`
+- `aces`
 
-### A5 / A6 / A7
+The post-process pipeline now follows a URP-style structure:
+
+- HDR scene result when the browser supports half-float render targets
+- bloom prefilter
+- downsample pyramid
+- upsample/combine pyramid
+- final uber pass with tonemapping
+
+Unsupported environments fall back to the same pipeline on an LDR render target.
+
+## 6. Preview Model
+
+The lab no longer defaults to node-stage previews.
+
+It uses layer-level preview/solo modes:
+
+- `composite`
+- `arc`
+- `disk`
+- `shards`
+- `postfxOff`
+
+`postfxOff` keeps the composite result but bypasses the post-process pass.
+
+## 7. API Shape
+
+The public runtime config is nested and semantic:
 
 ```text
-A5 = FlipX(A4)
-
-A6 = Rotate(
-    input = A5,
-    angular_speed_deg = -90
-)
-
-A7 = Colorize(
-    input = A6,
-    color = [0.18, 0.87, 1.00]
-)
+RuntimeConfig = {
+  arc,
+  disk,
+  shards,
+  compositor,
+  mixer,
+  postfx,
+}
 ```
 
-说明：
-
-- `A6` 当前是**恒定角速度旋转**
-- 它不是 `0 -> angle` 的一次性插值
-- 旋转中心是点击点
-- `A7` 当前没有单独 emission 参数，只有颜色
-
-### Branch A 输出
+`updateConfig(...)` deep-merges by section, so partial updates are valid:
 
 ```text
-MainArc = A7
+updateConfig({
+  disk: { color: ... },
+  mixer: { mode: 'screen' },
+})
 ```
 
-## 4. Branch B: CoreDisk
+## 8. Legacy Policy
 
-### BaseCircle
+The historical branch-stage renderer is preserved only by git history.
 
-```text
-BaseCircle = ColoredDisk(
-    radius = coreDiskRadius,
-    softness = coreDiskSoftness,
-    color = coreDiskColor
-)
-```
-
-说明：
-
-- 这是一个实心圆盘，不是空心 ring
-- `coreDiskColor` 独立于全局 `themeColor`
-- 默认颜色是 `#55BDFF`
-
-### Scale
-
-```text
-Scale = ScaleAnimation(
-    input = BaseCircle,
-    start_scale = coreDiskScaleStart,
-    end_scale = coreDiskScaleEnd,
-    time_fraction = coreDiskScaleTimeFraction,
-    method = ease-out
-)
-```
-
-说明：
-
-- Scale 继承 BaseCircle 的着色结果
-- 放大时序仍然是旧 CoreDisk scale 阶段的 ease-out 骨架
-
-### Alpha
-
-```text
-Alpha = HoldThenFade(
-    input = Scale,
-    start_alpha = coreDiskAlphaStart,
-    end_alpha = coreDiskAlphaEnd,
-    fade_start_fraction = coreDiskAlphaFadeStartFraction
-)
-```
-
-说明：
-
-- 这一步只控制透明度/coverage
-- 不再有独立的 gray/tone 阶段
-
-### Branch B 默认输出
-
-```text
-CoreDisk = Final
-Final = Scale * Alpha
-```
-
-## 5. Branch C: Main Composite
-
-### C0
-
-```text
-C0 = SharedCarrierDomain(
-    layers = [CoreDisk, MainArc]
-)
-```
-
-说明：
-
-- `C0` 不做 RGB 色混
-- `C0` 只建立 `CoreDisk` / `MainArc` 共享的形状与变换域
-- `C0` 之后仍然保留两条独立 carrier：
-  - `coreDiskCarrierAfterC0`
-  - `mainArcCarrierAfterC0`
-
-### B -> A handoff policy
-
-```text
-start Branch A when Branch B scale reaches 100%
-```
-
-当前代码中的语义：
-
-- `CoreDisk` 点击后立刻开始
-- `MainArc` 不会立刻开始
-- `MainArc` 整条时间线会后移到 CoreDisk 的 Scale 阶段完成之后
-- A 分支不会压缩，只会整体后移
-
-### C1
-
-```text
-C1 = AnimateScale(
-    input = [coreDiskCarrierAfterC0, mainArcCarrierAfterC0],
-    start_scale = 0.20,
-    end_scale = 1.00,
-    time_fraction = 0.85,
-    method = ease-out
-)
-```
-
-说明：
-
-- `C1` 是对 `CoreDisk` / `MainArc` 的共享 carrier 域做后置缩放
-- 缩放中心是点击点
-
-### Branch C 输出
-
-```text
-MainFX = C1(
-    coreDiskCarrierAfterC1,
-    mainArcCarrierAfterC1
-)
-```
-
-### FinalMixer
-
-```text
-FinalFX = FinalMixer(
-    MainArc   = ThemeColor * mainArcCarrierAfterC1,
-    CoreDisk  = CoreDiskColor * coreDiskCarrierAfterC1,
-    Fragments = FragmentColor,
-    weights   = [mainArcWeight, coreDiskWeight, fragmentsWeight],
-    mode      = finalMixerMode,
-    gain      = finalMixerGain
-)
-```
-
-说明：
-
-- `Fragments` 不经过 `C1`
-- A/B/D 的最终色混只在 `FinalMixer` 发生
-- `finalMixerMode` 支持：
-  - `normalized`
-  - `add`
-  - `screen`
-  - `max`
-
-## 6. Branch D: Fragment Particles
-
-### D0 / D1 / D2
-
-```text
-D0 = TriangleShape(size = 0.53)
-D1 = FlipY(D0)
-D2 = ParticleSprites([D0, D1])
-```
-
-### D3 / D4
-
-```text
-D3 = DonutShape(
-    outer_radius = 0.203,
-    inner_radius = 0.098
-)
-
-D4 = ParticleDistributionMap(D3)
-```
-
-### D5
-
-```text
-D5 = ParticleSystem(
-    sprites = D2,
-    distribution = D4,
-    type = burst,
-    direction = from_center,
-    count = 4,
-    speed = 0.04 ~ 0.08,
-    lifetime = 0.38 ~ 0.60,
-    size_random = 0.74 ~ 1.39,
-    random_rotation = true
-)
-```
-
-说明：
-
-- 粒子出生点从 donut 区域内做面积正确采样
-- 每个粒子随机选择正三角或倒三角 sprite
-
-### D6
-
-```text
-D6 = ScaleOverLifetime(
-    input = D5,
-    start_scale = 0.00,
-    peak_scale = 1.00,
-    end_scale = 0.00,
-    grow_fraction = 0.15
-)
-```
-
-说明：
-
-- 前 `15%` 生命周期从 `0 -> 1`
-- 后续从 `1 -> 0`
-
-### D7
-
-```text
-D7 = ColorOverLifetime(
-    input = D6,
-    target_color = #75E2FF,
-    policy = per_particle,
-    timing = complete_when_scale_reaches_peak
-)
-```
-
-### D8
-
-```text
-D8 = AlphaOverLifetime(
-    input = D7,
-    alpha_max = 1.00,
-    alpha_min = 0.35,
-    flash_period_min = 0.07,
-    flash_period_max = 0.15,
-    policy = per_particle_flash,
-    timing = start_when_scale_reaches_peak
-)
-```
-
-说明：
-
-- 每个粒子会随机得到自己的 flash 周期
-- 达到 D6 峰值前，alpha 保持 `alpha_max`
-- 达到峰值后，在 `alpha_max` 和 `alpha_min` 之间持续闪动
-
-### D9
-
-```text
-D9 = InitScale(
-    input = D8,
-    start_scale = 0.85,
-    end_scale = 1.10,
-    time_fraction = 0.30,
-    method = ease-out,
-    policy = full_D8
-)
-```
-
-说明：
-
-- `policy = full_D8`
-- 当前实现已经不是 per-particle
-- 它对整组 D8 结果做统一 init scale
-
-### Branch D 默认输出
-
-```text
-Fragments = D8
-```
-
-说明：
-
-- `D9` 已实现
-- 但当前默认最终输出仍然使用 `D8`
-- 如果手动把 preview selector 切到 `D9`，最终画面也会切过去
-
-## 7. Final
-
-```text
-FinalFX = Composite(
-    layers = [MainFX, Fragments],
-    blend = add
-)
-```
-
-当前默认等价于：
-
-```text
-FinalFX = MainFX + D8
-```
-
-## 8. Filter
-
-当前实现为独立 post-process pass，语义对齐 Unity 的 `PP FXTouchBloomTonemapping`：
-
-```text
-FX = PostProcess(
-    FinalFX,
-    bloom(threshold, intensity, scatter),
-    tonemapping(mode)
-)
-```
-
-当前默认值：
-
-```text
-Bloom Threshold  = 1.00
-Bloom Intensity  = 1.00
-Bloom Scatter    = 0.70
-Tonemapping      = Neutral
-```
-
-说明：
-
-- `Filter` 有独立开关
-- 关闭后直接旁路 post-process，只显示原始 `FinalFX`
-- 当前 web 侧不再暴露 `Blur Mix / Screen Mix / Global Alpha / Filter Blend Mode`
-
-## 9. 当前默认状态汇总
-
-### Final output defaults
-
-```text
-Core preview     = Final
-Fragment preview = D8
-Filter           = enabled
-```
-
-### Current effect summary
-
-```text
-MainArc:
-  ellipse prefab -> upward eased motion/shrink -> 2~3 instances ->
-  polar warp -> flip x -> constant rotation -> cyan color
-
-CoreDisk:
-  height helper -> solid disk -> scale in -> sequence-driven gray/alpha -> blue replace
-
-MainFX:
-  CoreDisk starts immediately
-  MainArc waits until Branch B scale reaches 100%
-  then both are additively composited and scaled as one
-
-Fragments:
-  donut-distributed triangle burst ->
-  scale over lifetime -> cyan color over lifetime ->
-  flashing alpha over lifetime
-
-Final:
-  MainFX + Fragments
-  then bloom + blur + screen
-```
-
-## 10. 后续修改原则
-
-以后如果继续推进文档和代码，优先遵守这三个原则：
-
-1. `design.md` 写“当前真实行为”，不是写“可能的理想图”。
-2. 如果 preview selector 会改变最终输出，文档必须明确写出来。
-3. 新增阶段时，要同时更新：
-   - 文档里的 stage 链路
-   - 默认输出阶段
-   - 面板默认值
-   - 是否为 next-click 生效或 immediate 生效
+- no parallel legacy runtime remains in-tree
+- no `legacy/` runtime path is kept alive
+- this document describes only the current vNext implementation

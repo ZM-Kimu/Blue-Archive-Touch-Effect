@@ -1,28 +1,41 @@
 import { Mesh, Program, RenderTarget, Renderer, Triangle } from 'ogl'
-import vertex from './shaders/click-fx.vert'
-import burstSceneFragment from './shaders/burst-scene.frag'
-import burstFilterFragment from './shaders/burst-filter.frag'
-import { applyRuntimeConfigConstraints, defaultRuntimeConfig } from './config'
+import {
+  createRuntimeConfig,
+  mergeRuntimeConfig,
+} from './config'
 import {
   createBurstStore,
   expandBurstBounds,
-  getBurstFragmentBounds,
-  getBurstMainFxBounds,
+  getBurstCompositeBounds,
+  getBurstShardsBounds,
   hasActiveBursts,
   spawnBurst,
   unionBurstBounds,
   updateBurstActivity,
 } from './state'
+import burstFilterFragment from './shaders/burst-filter.frag'
+import bloomDownsampleFragment from './shaders/postfx-bloom-downsample.frag'
+import bloomPrefilterFragment from './shaders/postfx-bloom-prefilter.frag'
+import bloomUpsampleFragment from './shaders/postfx-bloom-upsample.frag'
+import burstSceneFragment from './shaders/burst-scene.frag'
+import vertex from './shaders/click-fx.vert'
 import type {
   BurstBounds,
   BurstState,
   ClickFxInstance,
   CreateClickFxOptions,
   RuntimeConfig,
+  RuntimeConfigPatch,
   RuntimeDebugState,
 } from './types'
 
 type UniformBag = Record<string, { value: any }>
+
+type HdrTargetSupport = {
+  useHdr: boolean
+  type: number
+  internalFormat?: number
+}
 
 type RuntimeState = {
   width: number
@@ -32,10 +45,6 @@ type RuntimeState = {
 
 type RenderRect = {
   localBounds: BurstBounds
-  cssLeft: number
-  cssTop: number
-  cssWidth: number
-  cssHeight: number
   deviceX: number
   deviceY: number
   deviceWidth: number
@@ -47,65 +56,197 @@ type InternalClickFxInstance = ClickFxInstance & {
 }
 
 const defaultRuntimeDebugState = (): RuntimeDebugState => ({
-  branchVisibility: {
-    mainArc: true,
-    coreDisk: true,
-  mainFx: true,
-  fragments: true,
-  filter: true,
-  },
-  mainArcPreviewStage: 'a7',
-  corePreviewStage: 'bFinal',
-  fragmentPreviewStage: 'd8',
+  previewMode: 'composite',
 })
 
-const getFinalMixerModeValue = (mode: RuntimeConfig['finalMixerMode']) =>
-  mode === 'normalized' ? 0 : mode === 'add' ? 1 : mode === 'screen' ? 2 : 3
+const setCanvasStyles = (canvas: HTMLCanvasElement) =>
+{
+  Object.assign(canvas.style, {
+    position: 'absolute',
+    inset: '0',
+    width: '100%',
+    height: '100%',
+    display: 'block',
+    pointerEvents: 'none',
+    zIndex: '0',
+  })
+}
 
-const getTonemappingModeValue = (mode: RuntimeConfig['fxTonemappingMode']) =>
+const setRendererViewport = (
+  renderer: Renderer,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) =>
+{
+  renderer.gl.viewport(x, y, width, height)
+  renderer.state.viewport.x = x
+  renderer.state.viewport.y = y
+  renderer.state.viewport.width = width
+  renderer.state.viewport.height = height
+}
+
+const getMixerModeValue = (mode: RuntimeConfig['mixer']['mode']) =>
+  mode === 'add' ? 0 : mode === 'screen' ? 1 : 2
+
+const getTonemappingModeValue = (mode: RuntimeConfig['postfx']['tonemapping']['mode']) =>
   mode === 'none' ? 0 : mode === 'neutral' ? 1 : 2
 
-const getThemeColorValue = (config: RuntimeConfig) => [
-  config.themeColor.r,
-  config.themeColor.g,
-  config.themeColor.b,
-]
+const getPreviewModeValue = (mode: RuntimeDebugState['previewMode']) =>
+  mode === 'composite' || mode === 'postfxOff'
+    ? 0
+    : mode === 'arc'
+      ? 1
+      : mode === 'disk'
+        ? 2
+        : 3
 
-const getCoreDiskColorValue = (config: RuntimeConfig) => [
-  config.coreDiskColor.r,
-  config.coreDiskColor.g,
-  config.coreDiskColor.b,
-]
+const gammaToLinear = (value: number) =>
+  value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4)
 
-const getFragmentHighlightColorValue = (config: RuntimeConfig) => [
-  Math.min(1, config.themeColor.r * 1.2),
-  Math.min(1, config.themeColor.g * 1.2),
-  Math.min(1, config.themeColor.b * 1.2),
-]
+const getBloomScatterValue = (scatter: number) =>
+  0.05 + 0.9 * Math.min(1, Math.max(0, scatter))
+
+const getBloomDownscaleFactor = (downscale: RuntimeConfig['postfx']['bloom']['downscale']) =>
+  downscale === 'quarter' ? 4 : 2
+
+const detectHdrTargetSupport = (gl: WebGLRenderingContext | WebGL2RenderingContext): HdrTargetSupport =>
+{
+  const supportsWebgl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext
+  if (!supportsWebgl2)
+  {
+    return {
+      useHdr: false,
+      type: gl.UNSIGNED_BYTE,
+    }
+  }
+
+  const webgl2 = gl as WebGL2RenderingContext
+  const hasColorBufferFloat = Boolean(webgl2.getExtension('EXT_color_buffer_float'))
+
+  if (!hasColorBufferFloat)
+  {
+    return {
+      useHdr: false,
+      type: gl.UNSIGNED_BYTE,
+    }
+  }
+
+  return {
+    useHdr: true,
+    type: webgl2.HALF_FLOAT,
+    internalFormat: webgl2.RGBA16F,
+  }
+}
+
+const createRenderTargetOptions = (
+  gl: WebGLRenderingContext | WebGL2RenderingContext,
+  hdrTargetSupport: HdrTargetSupport
+) =>
+{
+  const options: Record<string, unknown> = {
+    width: 1,
+    height: 1,
+    depth: false,
+    stencil: false,
+    wrapS: gl.CLAMP_TO_EDGE,
+    wrapT: gl.CLAMP_TO_EDGE,
+    minFilter: gl.LINEAR,
+    magFilter: gl.LINEAR,
+    format: gl.RGBA,
+    type: hdrTargetSupport.type,
+  }
+
+  if (hdrTargetSupport.useHdr && hdrTargetSupport.internalFormat !== undefined)
+  {
+    options.internalFormat = hdrTargetSupport.internalFormat
+  }
+
+  return options
+}
+
+const ensureRenderTargetSize = (target: RenderTarget, width: number, height: number) =>
+{
+  const safeWidth = Math.max(1, Math.floor(width))
+  const safeHeight = Math.max(1, Math.floor(height))
+  if (target.width === safeWidth && target.height === safeHeight)
+  {
+    return
+  }
+
+  target.setSize(safeWidth, safeHeight)
+}
 
 const createSceneUniforms = (config: RuntimeConfig, debugState: RuntimeDebugState): UniformBag => ({
   uTime: { value: 0 },
   uLocalBounds: { value: [-1, 1, -1, 1] },
   uBurstTiming: { value: [0, 0, 0, 0] },
-  uBurstCoreData: { value: [0, 1, 0, 0] },
-  uBurstCoreAnimData: { value: [0.25, 1, 0.3, 0] },
-  uBurstCoreToneData: { value: [1, 0, 0.3, 0] },
-  uBurstFragmentData: { value: [0.53, 0.203, 0.098, 0] },
-  uArcData: { value: [config.angleSpanDeg * Math.PI / 180, config.arcRadius, config.rotationSpeedDeg * Math.PI / 180, 0] },
-  uThemeColor: { value: getThemeColorValue(config) },
-  uCoreDiskColor: { value: getCoreDiskColorValue(config) },
-  uFragmentHighlightColor: { value: getFragmentHighlightColorValue(config) },
-  uCompositeScaleParams: { value: [config.c1StartScale, config.c1EndScale, config.c1TimeFraction] },
-  uFinalMixerWeights: { value: [config.mainArcWeight, config.coreDiskWeight, config.fragmentsWeight] },
-  uFinalMixerParams: { value: [getFinalMixerModeValue(config.finalMixerMode), config.finalMixerGain] },
-  uEffectScale: { value: config.effectScale },
-  uFragmentScaleCurveParams: { value: [config.d6StartScale, config.d6PeakScale, config.d6EndScale, config.d6GrowTimeFraction] },
-  uFragmentAlphaParams: { value: [config.d8AlphaMax, config.d8AlphaMin] },
-  uFragmentInitScaleParams: { value: [config.d9StartScale, config.d9EndScale, config.d9TimeFraction] },
-  uMainArcPreviewStage: { value: 4 },
-  uCorePreviewStage: { value: 3 },
-  uFragmentPreviewStage: { value: 8 },
-  uBranchVisibility: { value: [1, 1, 1, 1] },
+  uDiskShapeData: { value: [config.disk.shape.radius, config.disk.shape.softness, 0, 0] },
+  uDiskScaleData: { value: [config.disk.scale.start, config.disk.scale.end, config.disk.scale.timeFraction, 0] },
+  uDiskAlphaData: { value: [config.disk.alpha.start, config.disk.alpha.end, config.disk.alpha.fadeStartFraction, 0] },
+  uDiskColor: { value: [config.disk.color.r, config.disk.color.g, config.disk.color.b] },
+  uArcData: {
+    value: [
+      config.arc.warp.angleSpanDeg * Math.PI / 180,
+      config.arc.warp.radius,
+      config.arc.rotation.speedDeg * Math.PI / 180,
+      0,
+    ],
+  },
+  uArcAlphaData: { value: [config.arc.alpha.multiplier, 0, 0, 0] },
+  uArcColor: { value: [config.arc.color.r, config.arc.color.g, config.arc.color.b] },
+  uCompositorScaleData: {
+    value: [
+      config.compositor.sharedScale.start,
+      config.compositor.sharedScale.end,
+      config.compositor.sharedScale.timeFraction,
+      0,
+    ],
+  },
+  uMixerWeights: {
+    value: [
+      config.mixer.arcWeight,
+      config.mixer.diskWeight,
+      config.mixer.shardsWeight,
+    ],
+  },
+  uMixerParams: { value: [getMixerModeValue(config.mixer.mode), config.mixer.gain, 0, 0] },
+  uPreviewMode: { value: getPreviewModeValue(debugState.previewMode) },
+  uEffectScale: { value: config.compositor.effectScale },
+  uShardsShapeData: {
+    value: [
+      config.shards.shape.triangleSize,
+      config.shards.distribution.outerRadius,
+      config.shards.distribution.innerRadius,
+      0,
+    ],
+  },
+  uShardsScaleCurveData: {
+    value: [
+      config.shards.scaleOverLife.start,
+      config.shards.scaleOverLife.peak,
+      config.shards.scaleOverLife.end,
+      config.shards.scaleOverLife.growTimeFraction,
+    ],
+  },
+  uShardsAlphaData: { value: [config.shards.alpha.max, config.shards.alpha.min] },
+  uShardsInitScaleData: {
+    value: [
+      config.shards.initScale.start,
+      config.shards.initScale.end,
+      config.shards.initScale.timeFraction,
+      0,
+    ],
+  },
+  uShardsTint: {
+    value: [
+      config.shards.color.tint.r,
+      config.shards.color.tint.g,
+      config.shards.color.tint.b,
+    ],
+  },
+  uShardsColorData: { value: [config.shards.color.peakBoost, 0, 0, 0] },
   uArcSourceBounds: { value: [0, 0, 0, 0] },
   uParticleA0: { value: [-100, 0, 1, 0] },
   uParticleB0: { value: [0, 0, 0, 0] },
@@ -148,71 +289,66 @@ const createSceneUniforms = (config: RuntimeConfig, debugState: RuntimeDebugStat
   uFragmentParticleC9: { value: [0, 0, 1, 0.1] },
 })
 
-const createFilterUniforms = (config: RuntimeConfig): UniformBag => ({
-  uSceneTexture: { value: null },
-  uSceneUvScale: { value: [1, 1] },
-  uSceneTexel: { value: [1, 1] },
-  uPostBloomParams: { value: [config.fxBloomThreshold, config.fxBloomIntensity, config.fxBloomScatter, 1] },
-  uPostTonemappingMode: { value: getTonemappingModeValue(config.fxTonemappingMode) },
+const createBloomPrefilterUniforms = (config: RuntimeConfig): UniformBag => ({
+  uSourceTexture: { value: null },
+  uSourceTexel: { value: [1, 1] },
+  uBloomThresholdData: {
+    value: [
+      gammaToLinear(config.postfx.bloom.threshold),
+      Math.max(gammaToLinear(config.postfx.bloom.threshold) * 0.5, 0.0001),
+      config.postfx.bloom.clamp,
+      config.postfx.bloom.highQualityFiltering ? 1 : 0,
+    ],
+  },
 })
 
-const setCanvasStyles = (canvas: HTMLCanvasElement) =>
-{
-  Object.assign(canvas.style, {
-    position: 'absolute',
-    inset: '0',
-    width: '100%',
-    height: '100%',
-    display: 'block',
-    pointerEvents: 'none',
-    zIndex: '0',
-  })
-}
+const createBloomDownsampleUniforms = (config: RuntimeConfig): UniformBag => ({
+  uSourceTexture: { value: null },
+  uSourceTexel: { value: [1, 1] },
+  uBloomSampleParams: { value: [config.postfx.bloom.highQualityFiltering ? 1 : 0, 0, 0, 0] },
+})
 
-const setRendererViewport = (
-  renderer: Renderer,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-) =>
-{
-  renderer.gl.viewport(x, y, width, height)
-  renderer.state.viewport.x = x
-  renderer.state.viewport.y = y
-  renderer.state.viewport.width = width
-  renderer.state.viewport.height = height
-}
+const createBloomUpsampleUniforms = (config: RuntimeConfig): UniformBag => ({
+  uHighTexture: { value: null },
+  uLowTexture: { value: null },
+  uLowTexel: { value: [1, 1] },
+  uBloomUpsampleParams: {
+    value: [getBloomScatterValue(config.postfx.bloom.scatter), config.postfx.bloom.highQualityFiltering ? 1 : 0, 0, 0],
+  },
+})
 
-const mergeConfig = (config: RuntimeConfig, partial: Partial<RuntimeConfig>) =>
-{
-  (Object.keys(partial) as Array<keyof RuntimeConfig>).forEach((configKey) =>
-  {
-    const value = partial[configKey]
-    if (value === undefined)
-    {
-      return
-    }
-
-    if (configKey === 'themeColor' || configKey === 'coreDiskColor')
-    {
-      const colorKey = configKey as 'themeColor' | 'coreDiskColor'
-      const colorValue = value as Partial<RuntimeConfig['themeColor']>
-      config[colorKey] = {
-        ...config[colorKey],
-        ...colorValue,
-      } as RuntimeConfig[typeof colorKey]
-    } else
-    {
-      ;(config as Record<keyof RuntimeConfig, RuntimeConfig[keyof RuntimeConfig]>)[configKey] = value
-    }
-
-    applyRuntimeConfigConstraints(config, configKey)
-  })
-}
+const createUberUniforms = (config: RuntimeConfig): UniformBag => ({
+  uSceneTexture: { value: null },
+  uBloomTexture: { value: null },
+  uPostfxParams: {
+    value: [
+      1,
+      config.postfx.bloom.enabled ? 1 : 0,
+      config.postfx.bloom.intensity,
+      getTonemappingModeValue(config.postfx.tonemapping.mode),
+    ],
+  },
+  uPostfxAlphaParams: {
+    value: [config.postfx.alpha.bloomStrength, config.postfx.alpha.bloomClamp, 0, 0],
+  },
+  uBloomTint: {
+    value: [config.postfx.bloom.tint.r, config.postfx.bloom.tint.g, config.postfx.bloom.tint.b],
+  },
+})
 
 const getFilterPaddingCss = (config: RuntimeConfig) =>
-  10 + config.fxBloomScatter * 28 + config.fxBloomIntensity * 12
+{
+  if (!config.postfx.enabled || !config.postfx.bloom.enabled)
+  {
+    return 6
+  }
+
+  const downscaleFactor = config.postfx.bloom.downscale === 'quarter' ? 0.8 : 1
+  return 12
+    + config.postfx.bloom.scatter * 36
+    + config.postfx.bloom.intensity * 18
+    + config.postfx.bloom.maxIterations * 5 * downscaleFactor
+}
 
 const getBurstRenderRect = (
   burst: BurstState,
@@ -221,28 +357,19 @@ const getBurstRenderRect = (
   runtimeState: RuntimeState
 ): RenderRect | null =>
 {
-  const mainFxBounds = getBurstMainFxBounds(burst, config)
-  const fragmentBounds = getBurstFragmentBounds(burst, config)
-  let visibleBounds = unionBurstBounds()
+  const compositeBounds = getBurstCompositeBounds(burst, config)
+  const shardsBounds = getBurstShardsBounds(burst, config)
+  let visibleBounds: BurstBounds
 
-  if (debugState.branchVisibility.mainFx)
+  if (debugState.previewMode === 'arc' || debugState.previewMode === 'disk')
   {
-    visibleBounds = unionBurstBounds(visibleBounds, mainFxBounds)
-  }
-
-  if (debugState.branchVisibility.fragments)
+    visibleBounds = compositeBounds
+  } else if (debugState.previewMode === 'shards')
   {
-    visibleBounds = unionBurstBounds(visibleBounds, fragmentBounds)
-  }
-
-  if (
-    visibleBounds.minX === 0
-    && visibleBounds.maxX === 0
-    && visibleBounds.minY === 0
-    && visibleBounds.maxY === 0
-  )
+    visibleBounds = shardsBounds
+  } else
   {
-    visibleBounds = unionBurstBounds(mainFxBounds, fragmentBounds)
+    visibleBounds = unionBurstBounds(compositeBounds, shardsBounds)
   }
 
   const paddingLocal = getFilterPaddingCss(config) / Math.max(runtimeState.height, 1)
@@ -279,10 +406,6 @@ const getBurstRenderRect = (
 
   return {
     localBounds,
-    cssLeft,
-    cssTop,
-    cssWidth: cssRight - cssLeft,
-    cssHeight: cssBottom - cssTop,
     deviceX,
     deviceY,
     deviceWidth,
@@ -296,63 +419,138 @@ const syncSceneStaticUniforms = (
   debugState: RuntimeDebugState
 ) =>
 {
-  uniforms.uArcData.value = [config.angleSpanDeg * Math.PI / 180, config.arcRadius, config.rotationSpeedDeg * Math.PI / 180, 0]
-  uniforms.uThemeColor.value = getThemeColorValue(config)
-  uniforms.uCoreDiskColor.value = getCoreDiskColorValue(config)
-  uniforms.uFragmentHighlightColor.value = getFragmentHighlightColorValue(config)
-  uniforms.uCompositeScaleParams.value = [config.c1StartScale, config.c1EndScale, config.c1TimeFraction]
-  uniforms.uFinalMixerWeights.value = [config.mainArcWeight, config.coreDiskWeight, config.fragmentsWeight]
-  uniforms.uFinalMixerParams.value = [getFinalMixerModeValue(config.finalMixerMode), config.finalMixerGain]
-  uniforms.uEffectScale.value = config.effectScale
-  uniforms.uFragmentScaleCurveParams.value = [config.d6StartScale, config.d6PeakScale, config.d6EndScale, config.d6GrowTimeFraction]
-  uniforms.uFragmentAlphaParams.value = [config.d8AlphaMax, config.d8AlphaMin]
-  uniforms.uFragmentInitScaleParams.value = [config.d9StartScale, config.d9EndScale, config.d9TimeFraction]
-  uniforms.uMainArcPreviewStage.value =
-    debugState.mainArcPreviewStage === 'a1' ? 0
-      : debugState.mainArcPreviewStage === 'a3' ? 1
-        : debugState.mainArcPreviewStage === 'a4' ? 2
-          : debugState.mainArcPreviewStage === 'a6' ? 3
-            : 4
-  uniforms.uCorePreviewStage.value =
-    debugState.corePreviewStage === 'bBase' ? 0
-      : debugState.corePreviewStage === 'bScale' ? 1
-        : debugState.corePreviewStage === 'bAlpha' ? 2
-          : 3
-  uniforms.uFragmentPreviewStage.value =
-    debugState.fragmentPreviewStage === 'd0' ? 0
-      : debugState.fragmentPreviewStage === 'd1' ? 1
-        : debugState.fragmentPreviewStage === 'd2' ? 2
-          : debugState.fragmentPreviewStage === 'd3' ? 3
-            : debugState.fragmentPreviewStage === 'd4' ? 4
-              : debugState.fragmentPreviewStage === 'd5' ? 5
-                : debugState.fragmentPreviewStage === 'd6' ? 6
-                  : debugState.fragmentPreviewStage === 'd7' ? 7
-                : debugState.fragmentPreviewStage === 'd8' ? 8
-                      : 9
-  uniforms.uBranchVisibility.value = [
-    debugState.branchVisibility.mainArc ? 1 : 0,
-    debugState.branchVisibility.coreDisk ? 1 : 0,
-    debugState.branchVisibility.mainFx ? 1 : 0,
-    debugState.branchVisibility.fragments ? 1 : 0,
+  uniforms.uDiskShapeData.value = [config.disk.shape.radius, config.disk.shape.softness, 0, 0]
+  uniforms.uDiskScaleData.value = [config.disk.scale.start, config.disk.scale.end, config.disk.scale.timeFraction, 0]
+  uniforms.uDiskAlphaData.value = [config.disk.alpha.start, config.disk.alpha.end, config.disk.alpha.fadeStartFraction, 0]
+  uniforms.uDiskColor.value = [config.disk.color.r, config.disk.color.g, config.disk.color.b]
+  uniforms.uArcData.value = [
+    config.arc.warp.angleSpanDeg * Math.PI / 180,
+    config.arc.warp.radius,
+    config.arc.rotation.speedDeg * Math.PI / 180,
+    0,
+  ]
+  uniforms.uArcAlphaData.value = [config.arc.alpha.multiplier, 0, 0, 0]
+  uniforms.uArcColor.value = [config.arc.color.r, config.arc.color.g, config.arc.color.b]
+  uniforms.uCompositorScaleData.value = [
+    config.compositor.sharedScale.start,
+    config.compositor.sharedScale.end,
+    config.compositor.sharedScale.timeFraction,
+    0,
+  ]
+  uniforms.uMixerWeights.value = [
+    config.mixer.arcWeight,
+    config.mixer.diskWeight,
+    config.mixer.shardsWeight,
+  ]
+  uniforms.uMixerParams.value = [getMixerModeValue(config.mixer.mode), config.mixer.gain, 0, 0]
+  uniforms.uPreviewMode.value = getPreviewModeValue(debugState.previewMode)
+  uniforms.uEffectScale.value = config.compositor.effectScale
+  uniforms.uShardsShapeData.value = [
+    config.shards.shape.triangleSize,
+    config.shards.distribution.outerRadius,
+    config.shards.distribution.innerRadius,
+    0,
+  ]
+  uniforms.uShardsScaleCurveData.value = [
+    config.shards.scaleOverLife.start,
+    config.shards.scaleOverLife.peak,
+    config.shards.scaleOverLife.end,
+    config.shards.scaleOverLife.growTimeFraction,
+  ]
+  uniforms.uShardsAlphaData.value = [config.shards.alpha.max, config.shards.alpha.min]
+  uniforms.uShardsInitScaleData.value = [
+    config.shards.initScale.start,
+    config.shards.initScale.end,
+    config.shards.initScale.timeFraction,
+    0,
+  ]
+  uniforms.uShardsTint.value = [
+    config.shards.color.tint.r,
+    config.shards.color.tint.g,
+    config.shards.color.tint.b,
+  ]
+  uniforms.uShardsColorData.value = [config.shards.color.peakBoost, 0, 0, 0]
+}
+
+const syncBloomPrefilterUniforms = (
+  uniforms: ReturnType<typeof createBloomPrefilterUniforms>,
+  config: RuntimeConfig,
+  texture: any,
+  texelX: number,
+  texelY: number
+) =>
+{
+  const thresholdLinear = gammaToLinear(config.postfx.bloom.threshold)
+  uniforms.uSourceTexture.value = texture
+  uniforms.uSourceTexel.value = [texelX, texelY]
+  uniforms.uBloomThresholdData.value = [
+    thresholdLinear,
+    Math.max(thresholdLinear * 0.5, 0.0001),
+    config.postfx.bloom.clamp,
+    config.postfx.bloom.highQualityFiltering ? 1 : 0,
   ]
 }
 
-const syncFilterUniforms = (
-  uniforms: ReturnType<typeof createFilterUniforms>,
+const syncBloomDownsampleUniforms = (
+  uniforms: ReturnType<typeof createBloomDownsampleUniforms>,
   config: RuntimeConfig,
-  filterEnabled: boolean,
-  textureScaleX: number,
-  textureScaleY: number,
+  texture: any,
   texelX: number,
-  texelY: number,
-  texture: any
+  texelY: number
 ) =>
 {
-  uniforms.uSceneTexture.value = texture
-  uniforms.uSceneUvScale.value = [textureScaleX, textureScaleY]
-  uniforms.uSceneTexel.value = [texelX, texelY]
-  uniforms.uPostBloomParams.value = [config.fxBloomThreshold, config.fxBloomIntensity, config.fxBloomScatter, filterEnabled ? 1 : 0]
-  uniforms.uPostTonemappingMode.value = getTonemappingModeValue(config.fxTonemappingMode)
+  uniforms.uSourceTexture.value = texture
+  uniforms.uSourceTexel.value = [texelX, texelY]
+  uniforms.uBloomSampleParams.value = [config.postfx.bloom.highQualityFiltering ? 1 : 0, 0, 0, 0]
+}
+
+const syncBloomUpsampleUniforms = (
+  uniforms: ReturnType<typeof createBloomUpsampleUniforms>,
+  config: RuntimeConfig,
+  highTexture: any,
+  lowTexture: any,
+  lowTexelX: number,
+  lowTexelY: number
+) =>
+{
+  uniforms.uHighTexture.value = highTexture
+  uniforms.uLowTexture.value = lowTexture
+  uniforms.uLowTexel.value = [lowTexelX, lowTexelY]
+  uniforms.uBloomUpsampleParams.value = [
+    getBloomScatterValue(config.postfx.bloom.scatter),
+    config.postfx.bloom.highQualityFiltering ? 1 : 0,
+    0,
+    0,
+  ]
+}
+
+const syncUberUniforms = (
+  uniforms: ReturnType<typeof createUberUniforms>,
+  config: RuntimeConfig,
+  postfxEnabled: boolean,
+  bloomTexture: any,
+  sceneTexture: any
+) =>
+{
+  uniforms.uSceneTexture.value = sceneTexture
+  uniforms.uBloomTexture.value = bloomTexture ?? sceneTexture
+  uniforms.uPostfxParams.value = [
+    postfxEnabled ? 1 : 0,
+    config.postfx.bloom.enabled && postfxEnabled ? 1 : 0,
+    config.postfx.bloom.intensity,
+    getTonemappingModeValue(config.postfx.tonemapping.mode),
+  ]
+  uniforms.uPostfxAlphaParams.value = [
+    config.postfx.alpha.bloomStrength,
+    config.postfx.alpha.bloomClamp,
+    0,
+    0,
+  ]
+  uniforms.uBloomTint.value = [
+    config.postfx.bloom.tint.r,
+    config.postfx.bloom.tint.g,
+    config.postfx.bloom.tint.b,
+  ]
 }
 
 const syncBurstUniforms = (
@@ -363,26 +561,79 @@ const syncBurstUniforms = (
 ) =>
 {
   uniforms.uTime.value = time
-  uniforms.uLocalBounds.value = [rect.localBounds.minX, rect.localBounds.maxX, rect.localBounds.minY, rect.localBounds.maxY]
-  uniforms.uBurstTiming.value = [burst.startTime, burst.branchAStartTime, burst.duration, burst.fragmentDuration]
-  uniforms.uBurstCoreData.value = [burst.coreDiskRadius, burst.coreDiskSoftness, 0, 0]
-  uniforms.uBurstCoreAnimData.value = [burst.coreDiskScaleStart, burst.coreDiskScaleEnd, burst.coreDiskScaleTimeFraction, burst.arcInitialAngle]
-  uniforms.uBurstCoreToneData.value = [burst.coreDiskAlphaStart, burst.coreDiskAlphaEnd, burst.coreDiskAlphaFadeStartFraction, 0]
-  uniforms.uBurstFragmentData.value = [burst.dTriangleSize, burst.d3OuterRadius, burst.d3InnerRadius, 0]
-  uniforms.uArcSourceBounds.value = [burst.bounds.minX, burst.bounds.maxX, burst.bounds.minY, burst.bounds.maxY]
+  uniforms.uLocalBounds.value = [
+    rect.localBounds.minX,
+    rect.localBounds.maxX,
+    rect.localBounds.minY,
+    rect.localBounds.maxY,
+  ]
+  uniforms.uBurstTiming.value = [
+    burst.startTime,
+    burst.arcStartTime,
+    burst.duration,
+    burst.shardsDuration,
+  ]
+  uniforms.uDiskShapeData.value[0] = burst.diskRadius
+  uniforms.uDiskShapeData.value[1] = burst.diskSoftness
+  uniforms.uDiskScaleData.value[0] = burst.diskScaleStart
+  uniforms.uDiskScaleData.value[1] = burst.diskScaleEnd
+  uniforms.uDiskScaleData.value[2] = burst.diskScaleTimeFraction
+  uniforms.uDiskScaleData.value[3] = burst.arcInitialAngle
+  uniforms.uDiskAlphaData.value[0] = burst.diskAlphaStart
+  uniforms.uDiskAlphaData.value[1] = burst.diskAlphaEnd
+  uniforms.uDiskAlphaData.value[2] = burst.diskAlphaFadeStartFraction
+  uniforms.uShardsShapeData.value[0] = burst.shardsTriangleSize
+  uniforms.uShardsShapeData.value[1] = burst.shardsOuterRadius
+  uniforms.uShardsShapeData.value[2] = burst.shardsInnerRadius
+  uniforms.uArcSourceBounds.value = [
+    burst.bounds.minX,
+    burst.bounds.maxX,
+    burst.bounds.minY,
+    burst.bounds.maxY,
+  ]
 
-  burst.particles.forEach((particle, index) =>
+  burst.arcParticles.forEach((particle, index) =>
   {
-    uniforms[`uParticleA${index}` as const].value = [particle.startTime, particle.duration, particle.scaleMultiplier, particle.enabled]
-    uniforms[`uParticleB${index}` as const].value = [particle.offsetX, particle.offsetY, particle.movementY, particle.radius]
-    uniforms[`uParticleC${index}` as const].value = [particle.scaleX, particle.scaleY, 0, 0]
+    uniforms[`uParticleA${index}` as const].value = [
+      particle.startTime,
+      particle.duration,
+      particle.scaleMultiplier,
+      particle.enabled,
+    ]
+    uniforms[`uParticleB${index}` as const].value = [
+      particle.offsetX,
+      particle.offsetY,
+      particle.movementY,
+      particle.radius,
+    ]
+    uniforms[`uParticleC${index}` as const].value = [
+      particle.scaleX,
+      particle.scaleY,
+      0,
+      0,
+    ]
   })
 
-  burst.fragmentParticles.forEach((particle, index) =>
+  burst.shardParticles.forEach((particle, index) =>
   {
-    uniforms[`uFragmentParticleA${index}` as const].value = [particle.startTime, particle.lifetime, particle.speed, particle.enabled]
-    uniforms[`uFragmentParticleB${index}` as const].value = [particle.spawnX, particle.spawnY, particle.dirX, particle.dirY]
-    uniforms[`uFragmentParticleC${index}` as const].value = [particle.rotation, particle.spriteIndex, particle.sizeMultiplier, particle.flashPeriod]
+    uniforms[`uFragmentParticleA${index}` as const].value = [
+      particle.startTime,
+      particle.lifetime,
+      particle.speed,
+      particle.enabled,
+    ]
+    uniforms[`uFragmentParticleB${index}` as const].value = [
+      particle.spawnX,
+      particle.spawnY,
+      particle.dirX,
+      particle.dirY,
+    ]
+    uniforms[`uFragmentParticleC${index}` as const].value = [
+      particle.rotation,
+      particle.spriteIndex,
+      particle.sizeMultiplier,
+      particle.flashTimeWarp,
+    ]
   })
 }
 
@@ -394,33 +645,23 @@ export const createClickFx = ({
   autoBindPointer = true,
 }: CreateClickFxOptions): ClickFxInstance =>
 {
-  const config: RuntimeConfig = {
-    ...defaultRuntimeConfig,
-    ...initialConfig,
-    themeColor: {
-      ...defaultRuntimeConfig.themeColor,
-      ...(initialConfig?.themeColor ?? {}),
-    },
-    coreDiskColor: {
-      ...defaultRuntimeConfig.coreDiskColor,
-      ...(initialConfig?.coreDiskColor ?? {}),
-    },
-  }
-  ;(Object.keys(config) as Array<keyof RuntimeConfig>).forEach((configKey) =>
-  {
-    applyRuntimeConfigConstraints(config, configKey)
-  })
-  const debugState: RuntimeDebugState = defaultRuntimeDebugState()
+  const config = createRuntimeConfig(initialConfig)
+  const debugState = defaultRuntimeDebugState()
   const burstStore = createBurstStore()
   const renderer = new Renderer({
     alpha: true,
     antialias: true,
     dpr: Math.min(window.devicePixelRatio || 1, pixelRatioCap),
+    premultipliedAlpha: true,
   })
   const gl = renderer.gl
+  const hdrTargetSupport = detectHdrTargetSupport(gl)
   const canvas = gl.canvas as HTMLCanvasElement
   const sceneUniforms = createSceneUniforms(config, debugState)
-  const filterUniforms = createFilterUniforms(config)
+  const bloomPrefilterUniforms = createBloomPrefilterUniforms(config)
+  const bloomDownsampleUniforms = createBloomDownsampleUniforms(config)
+  const bloomUpsampleUniforms = createBloomUpsampleUniforms(config)
+  const uberUniforms = createUberUniforms(config)
   const geometry = new Triangle(gl)
   const sceneProgram = new Program(gl, {
     vertex,
@@ -430,19 +671,48 @@ export const createClickFx = ({
     depthWrite: false,
     cullFace: false,
   })
-  const filterProgram = new Program(gl, {
+  const bloomPrefilterProgram = new Program(gl, {
+    vertex,
+    fragment: bloomPrefilterFragment,
+    uniforms: bloomPrefilterUniforms,
+    depthTest: false,
+    depthWrite: false,
+    cullFace: false,
+  })
+  const bloomDownsampleProgram = new Program(gl, {
+    vertex,
+    fragment: bloomDownsampleFragment,
+    uniforms: bloomDownsampleUniforms,
+    depthTest: false,
+    depthWrite: false,
+    cullFace: false,
+  })
+  const bloomUpsampleProgram = new Program(gl, {
+    vertex,
+    fragment: bloomUpsampleFragment,
+    uniforms: bloomUpsampleUniforms,
+    depthTest: false,
+    depthWrite: false,
+    cullFace: false,
+  })
+  const uberProgram = new Program(gl, {
     vertex,
     fragment: burstFilterFragment,
-    uniforms: filterUniforms,
+    uniforms: uberUniforms,
     transparent: true,
     depthTest: false,
     depthWrite: false,
     cullFace: false,
   })
-  filterProgram.setBlendFunc(gl.ONE, gl.ONE, gl.ONE, gl.ONE)
   const sceneMesh = new Mesh(gl, { geometry, program: sceneProgram })
-  const filterMesh = new Mesh(gl, { geometry, program: filterProgram })
-  let sceneTarget = new RenderTarget(gl, { width: 1, height: 1, depth: false, stencil: false })
+  const bloomPrefilterMesh = new Mesh(gl, { geometry, program: bloomPrefilterProgram })
+  const bloomDownsampleMesh = new Mesh(gl, { geometry, program: bloomDownsampleProgram })
+  const bloomUpsampleMesh = new Mesh(gl, { geometry, program: bloomUpsampleProgram })
+  const uberMesh = new Mesh(gl, { geometry, program: uberProgram })
+  const renderTargetOptions = createRenderTargetOptions(gl, hdrTargetSupport)
+  const sceneTarget = new RenderTarget(gl, renderTargetOptions)
+  const bloomDownTargets: RenderTarget[] = []
+  const bloomUpTargets: RenderTarget[] = []
   let currentTime = 0
   let disposed = false
   let resizeObserver: ResizeObserver | null = null
@@ -470,19 +740,132 @@ export const createClickFx = ({
   const clearDefaultFramebuffer = () =>
   {
     renderer.bindFramebuffer()
-    setRendererViewport(renderer, 0, 0, Math.max(1, Math.round(runtimeState.width * runtimeState.dpr)), Math.max(1, Math.round(runtimeState.height * runtimeState.dpr)))
+    setRendererViewport(
+      renderer,
+      0,
+      0,
+      Math.max(1, Math.round(runtimeState.width * runtimeState.dpr)),
+      Math.max(1, Math.round(runtimeState.height * runtimeState.dpr))
+    )
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
   }
 
   const ensureSceneTarget = (width: number, height: number) =>
   {
-    if (width <= sceneTarget.width && height <= sceneTarget.height)
+    ensureRenderTargetSize(sceneTarget, width, height)
+  }
+
+  const getBloomTarget = (targets: RenderTarget[], index: number) =>
+  {
+    if (!targets[index])
     {
-      return
+      targets[index] = new RenderTarget(gl, renderTargetOptions)
     }
 
-    sceneTarget.setSize(Math.max(width, sceneTarget.width), Math.max(height, sceneTarget.height))
+    return targets[index]
+  }
+
+  const clearBoundTarget = () =>
+  {
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  }
+
+  const runBloomPyramid = (width: number, height: number) =>
+  {
+    const bloomConfig = config.postfx.bloom
+    if (!config.postfx.enabled || !bloomConfig.enabled || bloomConfig.intensity <= 0)
+    {
+      return null
+    }
+
+    const downscaleFactor = getBloomDownscaleFactor(bloomConfig.downscale)
+    let levelWidth = Math.max(1, Math.floor(width / downscaleFactor))
+    let levelHeight = Math.max(1, Math.floor(height / downscaleFactor))
+
+    if (levelWidth < 2 || levelHeight < 2)
+    {
+      return null
+    }
+
+    const maxLevels = Math.max(1, bloomConfig.maxIterations)
+    let levelCount = 0
+
+    const prefilterTarget = getBloomTarget(bloomDownTargets, 0)
+    ensureRenderTargetSize(prefilterTarget, levelWidth, levelHeight)
+    syncBloomPrefilterUniforms(
+      bloomPrefilterUniforms,
+      config,
+      sceneTarget.texture,
+      1 / sceneTarget.width,
+      1 / sceneTarget.height
+    )
+    renderer.bindFramebuffer(prefilterTarget)
+    setRendererViewport(renderer, 0, 0, prefilterTarget.width, prefilterTarget.height)
+    clearBoundTarget()
+    bloomPrefilterMesh.draw()
+    levelCount = 1
+
+    while (levelCount < maxLevels)
+    {
+      const previousTarget = bloomDownTargets[levelCount - 1]
+      const nextWidth = Math.max(1, Math.floor(previousTarget.width / 2))
+      const nextHeight = Math.max(1, Math.floor(previousTarget.height / 2))
+
+      if (nextWidth === previousTarget.width && nextHeight === previousTarget.height)
+      {
+        break
+      }
+
+      const nextTarget = getBloomTarget(bloomDownTargets, levelCount)
+      ensureRenderTargetSize(nextTarget, nextWidth, nextHeight)
+      syncBloomDownsampleUniforms(
+        bloomDownsampleUniforms,
+        config,
+        previousTarget.texture,
+        1 / previousTarget.width,
+        1 / previousTarget.height
+      )
+      renderer.bindFramebuffer(nextTarget)
+      setRendererViewport(renderer, 0, 0, nextTarget.width, nextTarget.height)
+      clearBoundTarget()
+      bloomDownsampleMesh.draw()
+      levelCount += 1
+
+      if (nextWidth <= 2 && nextHeight <= 2)
+      {
+        break
+      }
+    }
+
+    let currentTexture = bloomDownTargets[levelCount - 1].texture
+    let currentWidth = bloomDownTargets[levelCount - 1].width
+    let currentHeight = bloomDownTargets[levelCount - 1].height
+
+    for (let index = levelCount - 2; index >= 0; index -= 1)
+    {
+      const highTarget = bloomDownTargets[index]
+      const combinedTarget = getBloomTarget(bloomUpTargets, index)
+      ensureRenderTargetSize(combinedTarget, highTarget.width, highTarget.height)
+      syncBloomUpsampleUniforms(
+        bloomUpsampleUniforms,
+        config,
+        highTarget.texture,
+        currentTexture,
+        1 / currentWidth,
+        1 / currentHeight
+      )
+      renderer.bindFramebuffer(combinedTarget)
+      setRendererViewport(renderer, 0, 0, combinedTarget.width, combinedTarget.height)
+      clearBoundTarget()
+      bloomUpsampleMesh.draw()
+      currentTexture = combinedTarget.texture
+      currentWidth = combinedTarget.width
+      currentHeight = combinedTarget.height
+    }
+
+    return currentTexture
   }
 
   const drawBurst = (burst: BurstState) =>
@@ -504,19 +887,19 @@ export const createClickFx = ({
     gl.clear(gl.COLOR_BUFFER_BIT)
     sceneMesh.draw()
 
+    const postfxEnabled = config.postfx.enabled && debugState.previewMode !== 'postfxOff'
+    const bloomTexture = postfxEnabled ? runBloomPyramid(rect.deviceWidth, rect.deviceHeight) : null
+
     renderer.bindFramebuffer()
     setRendererViewport(renderer, rect.deviceX, rect.deviceY, rect.deviceWidth, rect.deviceHeight)
-    syncFilterUniforms(
-      filterUniforms,
+    syncUberUniforms(
+      uberUniforms,
       config,
-      debugState.branchVisibility.filter,
-      rect.deviceWidth / sceneTarget.width,
-      rect.deviceHeight / sceneTarget.height,
-      1 / rect.deviceWidth,
-      1 / rect.deviceHeight,
+      postfxEnabled,
+      bloomTexture,
       sceneTarget.texture
     )
-    filterMesh.draw()
+    uberMesh.draw()
   }
 
   const drawFrame = () =>
@@ -531,12 +914,10 @@ export const createClickFx = ({
 
     burstStore.bursts.forEach((burst) =>
     {
-      if (!burst.active)
+      if (burst.active)
       {
-        return
+        drawBurst(burst)
       }
-
-      drawBurst(burst)
     })
   }
 
@@ -588,7 +969,7 @@ export const createClickFx = ({
     spawnAtLocal(clientX - rect.left, clientY - rect.top)
   }
 
-  const spawnFromPressEvent = (event: MouseEvent) =>
+  const handleMouseDown = (event: MouseEvent) =>
   {
     if (event.button < 0 || event.button > 2)
     {
@@ -598,40 +979,17 @@ export const createClickFx = ({
     spawnAtClient(event.clientX, event.clientY)
   }
 
-  const handleMouseDown = (event: MouseEvent) =>
+  const updateConfig = (partial: RuntimeConfigPatch) =>
   {
-    spawnFromPressEvent(event)
-  }
-
-  const updateConfig = (partial: Partial<RuntimeConfig>) =>
-  {
-    mergeConfig(config, partial)
+    mergeRuntimeConfig(config, partial)
     drawFrame()
   }
 
   const setDebugState = (partial: Partial<RuntimeDebugState>) =>
   {
-    if (partial.branchVisibility)
+    if (partial.previewMode)
     {
-      debugState.branchVisibility = {
-        ...debugState.branchVisibility,
-        ...partial.branchVisibility,
-      }
-    }
-
-    if (partial.corePreviewStage)
-    {
-      debugState.corePreviewStage = partial.corePreviewStage
-    }
-
-    if (partial.mainArcPreviewStage)
-    {
-      debugState.mainArcPreviewStage = partial.mainArcPreviewStage
-    }
-
-    if (partial.fragmentPreviewStage)
-    {
-      debugState.fragmentPreviewStage = partial.fragmentPreviewStage
+      debugState.previewMode = partial.previewMode
     }
 
     drawFrame()
@@ -674,7 +1032,8 @@ export const createClickFx = ({
   {
     resizeObserver = new ResizeObserver(() => resize())
     resizeObserver.observe(target)
-  } else {
+  } else
+  {
     usedWindowResizeFallback = true
     hostWindow.addEventListener('resize', resize)
   }

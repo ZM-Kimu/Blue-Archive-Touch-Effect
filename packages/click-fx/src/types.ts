@@ -1,105 +1,172 @@
 export type UniformValue<T> = { value: T }
-export const finalMixerModes = ['normalized', 'add', 'screen', 'max'] as const
-export type FinalMixerMode = (typeof finalMixerModes)[number]
+
+export const mixerModes = ['add', 'screen', 'max'] as const
+export type MixerMode = (typeof mixerModes)[number]
+
 export const tonemappingModes = ['none', 'neutral', 'aces'] as const
 export type TonemappingMode = (typeof tonemappingModes)[number]
 
-export type BranchKey = 'mainArc' | 'coreDisk' | 'mainFx' | 'fragments' | 'filter'
-export type StageKey =
-  | 'a1'
-  | 'a2'
-  | 'a3'
-  | 'a4'
-  | 'a6'
-  | 'a7'
-  | 'bBase'
-  | 'bScale'
-  | 'bAlpha'
-  | 'bFinal'
-  | 'c1'
-  | 'd0'
-  | 'd1'
-  | 'd2'
-  | 'd3'
-  | 'd4'
-  | 'd5'
-  | 'd6'
-  | 'd7'
-  | 'd8'
-  | 'd9'
-  | 'fx'
-export type MainArcPreviewStage = 'a1' | 'a3' | 'a4' | 'a6' | 'a7'
-export type CorePreviewStage = 'bBase' | 'bScale' | 'bAlpha' | 'bFinal'
-export type FragmentPreviewStage = 'd0' | 'd1' | 'd2' | 'd3' | 'd4' | 'd5' | 'd6' | 'd7' | 'd8' | 'd9'
+export const bloomDownscaleModes = ['half', 'quarter'] as const
+export type BloomDownscaleMode = (typeof bloomDownscaleModes)[number]
 
-export type BranchVisibility = Record<BranchKey, boolean>
+export const layerPreviewModes = ['composite', 'arc', 'disk', 'shards', 'postfxOff'] as const
+export type LayerPreviewMode = (typeof layerPreviewModes)[number]
 
-export type ThemeColor = {
+export type ColorRgb = {
   r: number
   g: number
   b: number
 }
 
-export type DebugState = {
-  radius: number
-  scaleX: number
-  scaleY: number
-  duration: number
-  movementY: number
-  randomX: number
-  randomY: number
-  scaleMin: number
-  scaleMax: number
-  minCount: number
-  maxCount: number
-  angleSpanDeg: number
-  arcRadius: number
-  rotationSpeedDeg: number
-  themeColor: ThemeColor
-  mainArcWeight: number
-  coreDiskWeight: number
-  coreDiskColor: ThemeColor
-  coreDiskRadius: number
-  coreDiskSoftness: number
-  coreDiskScaleStart: number
-  coreDiskScaleEnd: number
-  coreDiskScaleTimeFraction: number
-  coreDiskAlphaStart: number
-  coreDiskAlphaEnd: number
-  coreDiskAlphaFadeStartFraction: number
-  c1StartScale: number
-  c1EndScale: number
-  c1TimeFraction: number
+export type ArcConfig = {
+  source: {
+    radius: number
+    scaleX: number
+    scaleY: number
+  }
+  motion: {
+    duration: number
+    movementY: number
+  }
+  emitter: {
+    randomX: number
+    randomY: number
+    scaleMin: number
+    scaleMax: number
+    minCount: number
+    maxCount: number
+  }
+  warp: {
+    angleSpanDeg: number
+    radius: number
+  }
+  rotation: {
+    speedDeg: number
+  }
+  alpha: {
+    multiplier: number
+  }
+  color: ColorRgb
+}
+
+export type DiskConfig = {
+  shape: {
+    radius: number
+    softness: number
+  }
+  scale: {
+    start: number
+    end: number
+    timeFraction: number
+  }
+  alpha: {
+    start: number
+    end: number
+    fadeStartFraction: number
+  }
+  color: ColorRgb
+}
+
+export type ShardsConfig = {
+  shape: {
+    triangleSize: number
+  }
+  distribution: {
+    outerRadius: number
+    innerRadius: number
+  }
+  burst: {
+    countMin: number
+    countMax: number
+    speedMin: number
+    speedMax: number
+    lifetimeMin: number
+    lifetimeMax: number
+    sizeMin: number
+    sizeMax: number
+  }
+  scaleOverLife: {
+    start: number
+    peak: number
+    end: number
+    growTimeFraction: number
+  }
+  initScale: {
+    start: number
+    end: number
+    timeFraction: number
+  }
+  alpha: {
+    max: number
+    min: number
+    flashTimeWarpMin: number
+    flashTimeWarpMax: number
+  }
+  color: {
+    tint: ColorRgb
+    peakBoost: number
+  }
+}
+
+export type CompositorConfig = {
+  sharedScale: {
+    start: number
+    end: number
+    timeFraction: number
+  }
+  handoff: {
+    arcDelayFromDiskScale: number
+  }
   effectScale: number
-  dTriangleSize: number
-  d3OuterRadius: number
-  d3InnerRadius: number
-  d5CountMin: number
-  d5CountMax: number
-  d5SpeedMin: number
-  d5SpeedMax: number
-  d5LifetimeMin: number
-  d5LifetimeMax: number
-  d5SizeMin: number
-  d5SizeMax: number
-  d6StartScale: number
-  d6PeakScale: number
-  d6EndScale: number
-  d6GrowTimeFraction: number
-  d8AlphaMax: number
-  d8AlphaMin: number
-  d8FlashPeriodMin: number
-  d8FlashPeriodMax: number
-  d9StartScale: number
-  d9EndScale: number
-  d9TimeFraction: number
-  fragmentsWeight: number
-  finalMixerMode: FinalMixerMode
-  finalMixerGain: number
-  fxBloomThreshold: number
-  fxBloomIntensity: number
-  fxBloomScatter: number
-  fxTonemappingMode: TonemappingMode
+}
+
+export type MixerConfig = {
+  arcWeight: number
+  diskWeight: number
+  shardsWeight: number
+  mode: MixerMode
+  gain: number
+}
+
+export type PostfxConfig = {
+  enabled: boolean
+  alpha: {
+    bloomStrength: number
+    bloomClamp: number
+  }
+  bloom: {
+    enabled: boolean
+    threshold: number
+    intensity: number
+    scatter: number
+    clamp: number
+    tint: ColorRgb
+    highQualityFiltering: boolean
+    downscale: BloomDownscaleMode
+    maxIterations: number
+  }
+  tonemapping: {
+    mode: TonemappingMode
+  }
+}
+
+export type RuntimeConfig = {
+  arc: ArcConfig
+  disk: DiskConfig
+  shards: ShardsConfig
+  compositor: CompositorConfig
+  mixer: MixerConfig
+  postfx: PostfxConfig
+}
+
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K]
+}
+
+export type RuntimeConfigPatch = DeepPartial<RuntimeConfig>
+
+export type RuntimeDebugState = {
+  previewMode: LayerPreviewMode
 }
 
 export type ParticleState = {
@@ -126,7 +193,7 @@ export type FragmentParticleState = {
   rotation: number
   spriteIndex: number
   sizeMultiplier: number
-  flashPeriod: number
+  flashTimeWarp: number
   enabled: number
 }
 
@@ -141,24 +208,24 @@ export type BurstState = {
   originX: number
   originY: number
   startTime: number
-  branchAStartTime: number
+  arcStartTime: number
   arcInitialAngle: number
   duration: number
   active: number
-  coreDiskRadius: number
-  coreDiskSoftness: number
-  coreDiskScaleStart: number
-  coreDiskScaleEnd: number
-  coreDiskScaleTimeFraction: number
-  coreDiskAlphaStart: number
-  coreDiskAlphaEnd: number
-  coreDiskAlphaFadeStartFraction: number
-  dTriangleSize: number
-  d3OuterRadius: number
-  d3InnerRadius: number
-  fragmentDuration: number
-  fragmentParticles: FragmentParticleState[]
-  particles: ParticleState[]
+  diskRadius: number
+  diskSoftness: number
+  diskScaleStart: number
+  diskScaleEnd: number
+  diskScaleTimeFraction: number
+  diskAlphaStart: number
+  diskAlphaEnd: number
+  diskAlphaFadeStartFraction: number
+  shardsTriangleSize: number
+  shardsOuterRadius: number
+  shardsInnerRadius: number
+  shardsDuration: number
+  shardParticles: FragmentParticleState[]
+  arcParticles: ParticleState[]
   bounds: BurstBounds
 }
 
@@ -167,57 +234,10 @@ export type BurstStore = {
   nextBurstIndex: number
 }
 
-export type ControlDefinition = {
-  branch: BranchKey
-  stage: StageKey
-  key: keyof DebugState
-  label: string
-  min: number
-  max: number
-  step: number
-}
-
-export type BranchDefinition = {
-  key: BranchKey
-  title: string
-  subtitle: string
-}
-
-export type StageDefinition = {
-  key: StageKey
-  branch: BranchKey
-  title: string
-  subtitle: string
-}
-
-export type CorePreviewOption = {
-  key: CorePreviewStage
-  label: string
-}
-
-export type FragmentPreviewOption = {
-  key: FragmentPreviewStage
-  label: string
-}
-
-export type PreviewState = {
-  core: CorePreviewStage
-  fragment: FragmentPreviewStage
-}
-
-export type RuntimeConfig = DebugState
-
-export type RuntimeDebugState = {
-  branchVisibility: BranchVisibility
-  mainArcPreviewStage: MainArcPreviewStage
-  corePreviewStage: CorePreviewStage
-  fragmentPreviewStage: FragmentPreviewStage
-}
-
 export type CreateClickFxOptions = {
   target: HTMLElement
   listenTarget?: HTMLElement | Window
-  config?: Partial<RuntimeConfig>
+  config?: RuntimeConfigPatch
   pixelRatioCap?: number
   autoBindPointer?: boolean
 }
@@ -226,7 +246,7 @@ export type ClickFxInstance = {
   canvas: HTMLCanvasElement
   spawnAtClient: (clientX: number, clientY: number) => void
   spawnAtLocal: (x: number, y: number) => void
-  updateConfig: (partial: Partial<RuntimeConfig>) => void
+  updateConfig: (partial: RuntimeConfigPatch) => void
   resize: () => void
   dispose: () => void
 }

@@ -1,6 +1,6 @@
 # blue-archive-touch-effect
 
-Attachable browser runtime for the Blue Archive-inspired click FX shader.
+Attachable browser runtime for a Blue Archive-inspired click FX renderer.
 
 ## Install
 
@@ -28,35 +28,28 @@ if (!target) {
 
 const fx = createClickFx({ target })
 
-target.addEventListener('pointerdown', (event) => {
+target.addEventListener('mousedown', (event) => {
   fx.spawnAtClient(event.clientX, event.clientY)
 })
 ```
 
-The target container should usually be `position: relative` or another non-static layout container. The runtime will attach a full-size overlay canvas inside it.
+## Layer Model
 
-## Auto Binding
+The renderer is organized as a layered pipeline:
 
-If you want the runtime to listen for pointer events itself:
+- `arc`: source ellipse, emitter jitter, polar warp, rotation, color
+  - includes `arc.alpha.multiplier`
+- `disk`: filled disk shape, scale timing, alpha timing, color
+- `shards`: burst distribution, Unity `Ring (3)` size-over-life, keyed flashing alpha with time-warp controls, tinted lifetime palette
+- `compositor`: shared transform timing for `arc + disk`
+- `mixer`: final color mix across `arc + disk + shards`
+- `postfx`: bloom and tonemapping
 
-```ts
-import { createClickFx } from 'blue-archive-touch-effect'
-
-const target = document.querySelector('#fx-root')
-
-if (!target) {
-  throw new Error('Missing target element')
-}
-
-const fx = createClickFx({
-  target,
-  autoBindPointer: true,
-})
-```
+`arc` and `disk` share the compositor transform. `shards` stay outside that shared transform and only join at the final mixer stage.
 
 ## Configuration
 
-You can pass initial config and update it later:
+Pass nested semantic config at creation time and update it later by section.
 
 ```ts
 import { createClickFx } from 'blue-archive-touch-effect'
@@ -64,67 +57,71 @@ import { createClickFx } from 'blue-archive-touch-effect'
 const fx = createClickFx({
   target: document.body,
   config: {
-    themeColor: { r: 0.23, g: 0.9, b: 1 },
-    coreDiskColor: { r: 0x55 / 255, g: 0xBD / 255, b: 1 },
-    mainArcWeight: 0.85,
-    coreDiskWeight: 1,
-    fragmentsWeight: 0.75,
-    finalMixerMode: 'normalized',
-    finalMixerGain: 1,
-    fxBloomThreshold: 1,
-    fxBloomIntensity: 1,
-    fxBloomScatter: 0.7,
-    fxTonemappingMode: 'neutral',
-    angleSpanDeg: 360,
-    arcRadius: 0.177,
+    arc: {
+      color: { r: 0.23, g: 0.9, b: 1 },
+      warp: { angleSpanDeg: 360, radius: 0.177 },
+    },
+    disk: {
+      color: { r: 0x55 / 255, g: 0xBD / 255, b: 1 },
+    },
+    mixer: {
+      mode: 'screen',
+      arcWeight: 1.02,
+      diskWeight: 0.75,
+      shardsWeight: 1.2,
+    },
+    postfx: {
+      bloom: {
+        threshold: 0.93,
+        intensity: 1.65,
+        scatter: 0.7,
+        tint: { r: 1, g: 1, b: 1 },
+        highQualityFiltering: true,
+        maxIterations: 4,
+      },
+      tonemapping: {
+        mode: 'none',
+      },
+    },
   },
 })
 
 fx.updateConfig({
-  themeColor: { r: 1, g: 0.55, b: 0.3 },
-  coreDiskColor: { r: 0.2, g: 0.7, b: 1 },
-  finalMixerMode: 'screen',
-  finalMixerGain: 1.1,
-  fxBloomIntensity: 1.4,
-  fxTonemappingMode: 'aces',
-  duration: 0.7,
+  arc: {
+    rotation: { speedDeg: -120 },
+  },
+  disk: {
+    alpha: { fadeStartFraction: 0.24 },
+  },
+  mixer: {
+    shardsWeight: 0.9,
+  },
 })
 ```
 
-`themeColor` drives the MainArc and Fragments branches. `coreDiskColor` is independent and controls CoreDisk directly. Update color objects as full objects:
+`updateConfig(...)` deep-merges by section. You only need to send the parts you want to change.
 
-```ts
-fx.updateConfig({
-  themeColor: { r: 0.4, g: 0.8, b: 1 },
-  coreDiskColor: { r: 0x55 / 255, g: 0xBD / 255, b: 1 },
-})
-```
+`screen` is the canonical mixer default. `add` remains available when you want a brighter, punchier composite.
 
-Partial nested updates like `themeColor: { r: 0.5 }` or `coreDiskColor: { r: 0.5 }` are not part of the supported API.
+## PostFX Reference
 
-In `0.2.0`, `themeColor` replaces the older `arcColorR/G/B` public API.
+`postfx` is now authored against the Unity URP-style `FXTouchBloomTonemapping` profile shape:
 
-Branch C keeps the existing `C1` shared transform for `CoreDisk` and `MainArc`, but final RGB composition now happens in one unified mixer:
+- `postfx.enabled`
+- `postfx.alpha.bloomStrength`
+- `postfx.alpha.bloomClamp`
+- `postfx.bloom.enabled`
+- `postfx.bloom.threshold`
+- `postfx.bloom.intensity`
+- `postfx.bloom.scatter`
+- `postfx.bloom.clamp`
+- `postfx.bloom.tint`
+- `postfx.bloom.highQualityFiltering`
+- `postfx.bloom.downscale`
+- `postfx.bloom.maxIterations`
+- `postfx.tonemapping.mode`
 
-- `mainArcWeight`
-- `coreDiskWeight`
-- `fragmentsWeight`
-- `finalMixerMode`
-- `finalMixerGain`
-
-`finalMixerMode` supports:
-
-- `normalized`
-- `add`
-- `screen`
-- `max`
-
-The filter block follows the Unity-style `Bloom + Tonemapping` model:
-
-- `fxBloomThreshold`
-- `fxBloomIntensity`
-- `fxBloomScatter`
-- `fxTonemappingMode`
+The renderer prefers an HDR offscreen path and falls back to an LDR approximation when the browser cannot allocate an HDR-compatible render target.
 
 ## API
 
@@ -143,12 +140,17 @@ The filter block follows the Unity-style `Bloom + Tonemapping` model:
 - `pixelRatioCap`: optional device-pixel-ratio cap for the renderer
 - `autoBindPointer`: when `true`, the runtime adds its own `mousedown` listener
 
-## Lifecycle Notes
+## Preview and Debug
 
-- Use `spawnAtClient()` when your coordinates come from DOM pointer events
-- Use `spawnAtLocal()` when you already have coordinates relative to the target container
-- Call `resize()` after external layout changes if you are not relying on the built-in observer
-- Call `dispose()` when removing the host element or tearing down the page/app
+The package public API stays renderer-focused. The bundled lab app adds layer-level preview/solo modes:
+
+- `composite`
+- `arc`
+- `disk`
+- `shards`
+- `postfxOff`
+
+These preview controls are lab/debug behavior, not part of the public runtime API.
 
 ## Packaging
 
