@@ -77,7 +77,7 @@ fx.dispose()
 
 - `target`：必填，覆盖画布挂载的宿主元素。
 - `listenTarget`：可选，用于监听 pointer 输入的元素或 `window`。
-- `config`：可选，运行时配置补丁。
+- `config`：可选，TouchEffect 配置补丁。
 - `pixelRatioCap`：可选，设备像素比上限，默认 `2`。
 - `autoBindPointer`：为 `true` 时，运行时自动绑定点击和滑动 pointer 事件。
 

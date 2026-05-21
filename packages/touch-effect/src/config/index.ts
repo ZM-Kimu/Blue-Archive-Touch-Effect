@@ -63,6 +63,26 @@ const clampColor = (color: ColorRgb) => ({
   b: clamp01(color.b),
 })
 
+const clampIntegerAtLeast = (value: number, min: number) =>
+  Math.max(min, Math.round(value))
+
+const clampOrderedPair = (
+  minValue: number,
+  maxValue: number,
+  normalize: (value: number) => number
+) =>
+{
+  const min = normalize(minValue)
+  const max = normalize(maxValue)
+  return min > max ? [min, min] as const : [min, max] as const
+}
+
+const clampCountRange = (minValue: number, maxValue: number) =>
+  clampOrderedPair(minValue, maxValue, (value) => clampIntegerAtLeast(value, 1))
+
+const clampNonNegativeRange = (minValue: number, maxValue: number) =>
+  clampOrderedPair(minValue, maxValue, clampNonNegative)
+
 export const defaultTouchEffectConfig: TouchEffectConfig = {
   arc: {
     source: {
@@ -290,18 +310,14 @@ export const applyTouchEffectConfigConstraints = (config: TouchEffectConfig): To
   config.arc.color = clampColor(config.arc.color)
   config.arc.emitter.randomX = clampNonNegative(config.arc.emitter.randomX)
   config.arc.emitter.randomY = clampNonNegative(config.arc.emitter.randomY)
-  config.arc.emitter.scaleMin = clampNonNegative(config.arc.emitter.scaleMin)
-  config.arc.emitter.scaleMax = clampNonNegative(config.arc.emitter.scaleMax)
-  config.arc.emitter.minCount = Math.max(1, Math.round(config.arc.emitter.minCount))
-  config.arc.emitter.maxCount = Math.max(1, Math.round(config.arc.emitter.maxCount))
-  if (config.arc.emitter.minCount > config.arc.emitter.maxCount)
-  {
-    config.arc.emitter.maxCount = config.arc.emitter.minCount
-  }
-  if (config.arc.emitter.scaleMin > config.arc.emitter.scaleMax)
-  {
-    config.arc.emitter.scaleMax = config.arc.emitter.scaleMin
-  }
+  ;[config.arc.emitter.scaleMin, config.arc.emitter.scaleMax] = clampNonNegativeRange(
+    config.arc.emitter.scaleMin,
+    config.arc.emitter.scaleMax
+  )
+  ;[config.arc.emitter.minCount, config.arc.emitter.maxCount] = clampCountRange(
+    config.arc.emitter.minCount,
+    config.arc.emitter.maxCount
+  )
 
   config.arc.warp.angleSpanDeg = Math.max(0, config.arc.warp.angleSpanDeg)
   config.arc.warp.radius = clampNonNegative(config.arc.warp.radius)
@@ -324,30 +340,22 @@ export const applyTouchEffectConfigConstraints = (config: TouchEffectConfig): To
     config.shards.distribution.outerRadius = config.shards.distribution.innerRadius
   }
 
-  config.shards.burst.countMin = Math.max(1, Math.round(config.shards.burst.countMin))
-  config.shards.burst.countMax = Math.max(1, Math.round(config.shards.burst.countMax))
-  if (config.shards.burst.countMin > config.shards.burst.countMax)
-  {
-    config.shards.burst.countMax = config.shards.burst.countMin
-  }
-  config.shards.burst.speedMin = clampNonNegative(config.shards.burst.speedMin)
-  config.shards.burst.speedMax = clampNonNegative(config.shards.burst.speedMax)
-  if (config.shards.burst.speedMin > config.shards.burst.speedMax)
-  {
-    config.shards.burst.speedMax = config.shards.burst.speedMin
-  }
-  config.shards.burst.lifetimeMin = clampNonNegative(config.shards.burst.lifetimeMin)
-  config.shards.burst.lifetimeMax = clampNonNegative(config.shards.burst.lifetimeMax)
-  if (config.shards.burst.lifetimeMin > config.shards.burst.lifetimeMax)
-  {
-    config.shards.burst.lifetimeMax = config.shards.burst.lifetimeMin
-  }
-  config.shards.burst.sizeMin = clampNonNegative(config.shards.burst.sizeMin)
-  config.shards.burst.sizeMax = clampNonNegative(config.shards.burst.sizeMax)
-  if (config.shards.burst.sizeMin > config.shards.burst.sizeMax)
-  {
-    config.shards.burst.sizeMax = config.shards.burst.sizeMin
-  }
+  ;[config.shards.burst.countMin, config.shards.burst.countMax] = clampCountRange(
+    config.shards.burst.countMin,
+    config.shards.burst.countMax
+  )
+  ;[config.shards.burst.speedMin, config.shards.burst.speedMax] = clampNonNegativeRange(
+    config.shards.burst.speedMin,
+    config.shards.burst.speedMax
+  )
+  ;[config.shards.burst.lifetimeMin, config.shards.burst.lifetimeMax] = clampNonNegativeRange(
+    config.shards.burst.lifetimeMin,
+    config.shards.burst.lifetimeMax
+  )
+  ;[config.shards.burst.sizeMin, config.shards.burst.sizeMax] = clampNonNegativeRange(
+    config.shards.burst.sizeMin,
+    config.shards.burst.sizeMax
+  )
 
   config.shards.scaleOverLife.start = clampNonNegative(config.shards.scaleOverLife.start)
   config.shards.scaleOverLife.peak = clampNonNegative(config.shards.scaleOverLife.peak)
@@ -362,12 +370,10 @@ export const applyTouchEffectConfigConstraints = (config: TouchEffectConfig): To
   {
     config.shards.alpha.max = config.shards.alpha.min
   }
-  config.shards.alpha.flashTimeWarpMin = clampNonNegative(config.shards.alpha.flashTimeWarpMin)
-  config.shards.alpha.flashTimeWarpMax = clampNonNegative(config.shards.alpha.flashTimeWarpMax)
-  if (config.shards.alpha.flashTimeWarpMin > config.shards.alpha.flashTimeWarpMax)
-  {
-    config.shards.alpha.flashTimeWarpMax = config.shards.alpha.flashTimeWarpMin
-  }
+  ;[config.shards.alpha.flashTimeWarpMin, config.shards.alpha.flashTimeWarpMax] = clampNonNegativeRange(
+    config.shards.alpha.flashTimeWarpMin,
+    config.shards.alpha.flashTimeWarpMax
+  )
   config.shards.color.tint = clampColor(config.shards.color.tint)
   config.shards.color.peakBoost = clampNonNegative(config.shards.color.peakBoost)
 
@@ -396,30 +402,22 @@ export const applyTouchEffectConfigConstraints = (config: TouchEffectConfig): To
   {
     config.swipe.shards.outerRadius = config.swipe.shards.innerRadius
   }
-  config.swipe.shards.speedMin = clampNonNegative(config.swipe.shards.speedMin)
-  config.swipe.shards.speedMax = clampNonNegative(config.swipe.shards.speedMax)
-  if (config.swipe.shards.speedMin > config.swipe.shards.speedMax)
-  {
-    config.swipe.shards.speedMax = config.swipe.shards.speedMin
-  }
-  config.swipe.shards.lifetimeMin = clampNonNegative(config.swipe.shards.lifetimeMin)
-  config.swipe.shards.lifetimeMax = clampNonNegative(config.swipe.shards.lifetimeMax)
-  if (config.swipe.shards.lifetimeMin > config.swipe.shards.lifetimeMax)
-  {
-    config.swipe.shards.lifetimeMax = config.swipe.shards.lifetimeMin
-  }
-  config.swipe.shards.sizeMin = clampNonNegative(config.swipe.shards.sizeMin)
-  config.swipe.shards.sizeMax = clampNonNegative(config.swipe.shards.sizeMax)
-  if (config.swipe.shards.sizeMin > config.swipe.shards.sizeMax)
-  {
-    config.swipe.shards.sizeMax = config.swipe.shards.sizeMin
-  }
-  config.swipe.shards.flashTimeWarpMin = clampNonNegative(config.swipe.shards.flashTimeWarpMin)
-  config.swipe.shards.flashTimeWarpMax = clampNonNegative(config.swipe.shards.flashTimeWarpMax)
-  if (config.swipe.shards.flashTimeWarpMin > config.swipe.shards.flashTimeWarpMax)
-  {
-    config.swipe.shards.flashTimeWarpMax = config.swipe.shards.flashTimeWarpMin
-  }
+  ;[config.swipe.shards.speedMin, config.swipe.shards.speedMax] = clampNonNegativeRange(
+    config.swipe.shards.speedMin,
+    config.swipe.shards.speedMax
+  )
+  ;[config.swipe.shards.lifetimeMin, config.swipe.shards.lifetimeMax] = clampNonNegativeRange(
+    config.swipe.shards.lifetimeMin,
+    config.swipe.shards.lifetimeMax
+  )
+  ;[config.swipe.shards.sizeMin, config.swipe.shards.sizeMax] = clampNonNegativeRange(
+    config.swipe.shards.sizeMin,
+    config.swipe.shards.sizeMax
+  )
+  ;[config.swipe.shards.flashTimeWarpMin, config.swipe.shards.flashTimeWarpMax] = clampNonNegativeRange(
+    config.swipe.shards.flashTimeWarpMin,
+    config.swipe.shards.flashTimeWarpMax
+  )
   config.swipe.shards.tint = clampColor(config.swipe.shards.tint)
   config.swipe.shards.peakBoost = clampNonNegative(config.swipe.shards.peakBoost)
 

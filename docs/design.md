@@ -1,6 +1,6 @@
-# Click FX VNext Design
+# TouchEffect Design
 
-This document describes the current vNext renderer, not the historical branch-stage graph.
+This document describes the current TouchEffect renderer, not the historical branch-stage graph.
 
 ## 1. Canonical Pipeline
 
@@ -16,7 +16,7 @@ Click
   -> PostFX
 ```
 
-The vNext mental model is layer-based:
+The TouchEffect mental model is layer-based:
 
 - `arc`
 - `disk`
@@ -234,7 +234,7 @@ It uses layer-level preview/solo modes:
 
 ## 7. API Shape
 
-The public runtime config is nested and semantic:
+The public TouchEffect config is nested and semantic:
 
 ```text
 TouchEffectConfig = {
@@ -263,4 +263,4 @@ The historical branch-stage renderer is preserved only by git history.
 
 - no parallel legacy runtime remains in-tree
 - no `legacy/` runtime path is kept alive
-- this document describes only the current vNext implementation
+- this document describes only the current TouchEffect implementation

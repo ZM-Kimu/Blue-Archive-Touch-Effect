@@ -23,7 +23,6 @@ import type {
   ParticleState,
   TouchEffectConfig,
   SwipePointState,
-  SwipeShardParticleState,
   SwipeStore,
   SwipeStrokeState,
 } from '../types'
@@ -64,21 +63,6 @@ const createSwipePointState = (): SwipePointState => ({
   enabled: 0,
 })
 
-const createSwipeShardParticleState = (): SwipeShardParticleState => ({
-  startTime: -100,
-  lifetime: 0,
-  spawnX: 0,
-  spawnY: 0,
-  dirX: 0,
-  dirY: 0,
-  speed: 0,
-  rotation: 0,
-  spriteIndex: 0,
-  sizeMultiplier: 1,
-  flashTimeWarp: 0.1,
-  enabled: 0,
-})
-
 const createBurstState = (): BurstState => ({
   originX: 0.5,
   originY: 0.5,
@@ -116,7 +100,7 @@ const createSwipeStrokeState = (): SwipeStrokeState => ({
   nextShardIndex: 0,
   bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
   points: Array.from({ length: MAX_SWIPE_POINTS_PER_STROKE }, createSwipePointState),
-  shardParticles: Array.from({ length: SWIPE_SHARD_PARTICLES_PER_STROKE }, createSwipeShardParticleState),
+  shardParticles: Array.from({ length: SWIPE_SHARD_PARTICLES_PER_STROKE }, createFragmentParticleState),
 })
 
 const resetParticle = (particle: ParticleState) =>
@@ -158,22 +142,6 @@ const resetSwipePoint = (point: SwipePointState) =>
   point.enabled = 0
 }
 
-const resetSwipeShardParticle = (particle: SwipeShardParticleState) =>
-{
-  particle.startTime = -100
-  particle.lifetime = 0
-  particle.spawnX = 0
-  particle.spawnY = 0
-  particle.dirX = 0
-  particle.dirY = 0
-  particle.speed = 0
-  particle.rotation = 0
-  particle.spriteIndex = 0
-  particle.sizeMultiplier = 1
-  particle.flashTimeWarp = 0.1
-  particle.enabled = 0
-}
-
 const resetBurstBounds = (burst: BurstState) =>
 {
   burst.bounds.minX = 0
@@ -203,7 +171,7 @@ const resetSwipeStroke = (stroke: SwipeStrokeState) =>
   stroke.nextShardIndex = 0
   resetSwipeBounds(stroke)
   stroke.points.forEach(resetSwipePoint)
-  stroke.shardParticles.forEach(resetSwipeShardParticle)
+  stroke.shardParticles.forEach(resetFragmentParticle)
 }
 
 const precomputeBurstBounds = (burst: BurstState) =>
@@ -380,6 +348,52 @@ const appendSwipePointState = (
   recomputeSwipeBounds(stroke)
 }
 
+type ShardParticleEmission = {
+  originX: number
+  originY: number
+  innerRadius: number
+  outerRadius: number
+  speedMin: number
+  speedMax: number
+  lifetimeMin: number
+  lifetimeMax: number
+  sizeMin: number
+  sizeMax: number
+  flashTimeWarpMin: number
+  flashTimeWarpMax: number
+  spriteIndex: number
+}
+
+const emitShardParticle = (
+  particle: FragmentParticleState,
+  currentTime: number,
+  emission: ShardParticleEmission
+) =>
+{
+  const outerRadius = Math.max(emission.outerRadius, emission.innerRadius)
+  const angle = randomBetween(0, Math.PI * 2)
+  const radialDistance = Math.sqrt(randomBetween(
+    emission.innerRadius * emission.innerRadius,
+    outerRadius * outerRadius
+  ))
+  const spawnOffsetX = Math.cos(angle) * radialDistance
+  const spawnOffsetY = Math.sin(angle) * radialDistance
+  const directionLength = Math.hypot(spawnOffsetX, spawnOffsetY) || 1
+
+  particle.startTime = currentTime
+  particle.lifetime = randomBetween(emission.lifetimeMin, emission.lifetimeMax)
+  particle.spawnX = emission.originX + spawnOffsetX
+  particle.spawnY = emission.originY + spawnOffsetY
+  particle.dirX = spawnOffsetX / directionLength
+  particle.dirY = spawnOffsetY / directionLength
+  particle.speed = randomBetween(emission.speedMin, emission.speedMax)
+  particle.rotation = randomBetween(0, Math.PI * 2)
+  particle.spriteIndex = emission.spriteIndex
+  particle.sizeMultiplier = randomBetween(emission.sizeMin, emission.sizeMax)
+  particle.flashTimeWarp = randomBetween(emission.flashTimeWarpMin, emission.flashTimeWarpMax)
+  particle.enabled = 1
+}
+
 const emitSwipeShardPair = (
   stroke: SwipeStrokeState,
   config: TouchEffectConfig,
@@ -396,27 +410,21 @@ const emitSwipeShardPair = (
     const particle = stroke.shardParticles[stroke.nextShardIndex]
     stroke.nextShardIndex = (stroke.nextShardIndex + 1) % stroke.shardParticles.length
 
-    const angle = randomBetween(0, Math.PI * 2)
-    const radialDistance = Math.sqrt(randomBetween(innerRadius * innerRadius, outerRadius * outerRadius))
-    const spawnOffsetX = Math.cos(angle) * radialDistance
-    const spawnOffsetY = Math.sin(angle) * radialDistance
-    const directionLength = Math.hypot(spawnOffsetX, spawnOffsetY) || 1
-
-    particle.startTime = currentTime
-    particle.lifetime = randomBetween(config.swipe.shards.lifetimeMin, config.swipe.shards.lifetimeMax)
-    particle.spawnX = emissionX + spawnOffsetX
-    particle.spawnY = emissionY + spawnOffsetY
-    particle.dirX = spawnOffsetX / directionLength
-    particle.dirY = spawnOffsetY / directionLength
-    particle.speed = randomBetween(config.swipe.shards.speedMin, config.swipe.shards.speedMax)
-    particle.rotation = randomBetween(0, Math.PI * 2)
-    particle.spriteIndex = index
-    particle.sizeMultiplier = randomBetween(config.swipe.shards.sizeMin, config.swipe.shards.sizeMax)
-    particle.flashTimeWarp = randomBetween(
-      config.swipe.shards.flashTimeWarpMin,
-      config.swipe.shards.flashTimeWarpMax
-    )
-    particle.enabled = 1
+    emitShardParticle(particle, currentTime, {
+      originX: emissionX,
+      originY: emissionY,
+      innerRadius,
+      outerRadius,
+      speedMin: config.swipe.shards.speedMin,
+      speedMax: config.swipe.shards.speedMax,
+      lifetimeMin: config.swipe.shards.lifetimeMin,
+      lifetimeMax: config.swipe.shards.lifetimeMax,
+      sizeMin: config.swipe.shards.sizeMin,
+      sizeMax: config.swipe.shards.sizeMax,
+      flashTimeWarpMin: config.swipe.shards.flashTimeWarpMin,
+      flashTimeWarpMax: config.swipe.shards.flashTimeWarpMax,
+      spriteIndex: index,
+    })
   }
 }
 
@@ -521,26 +529,23 @@ export const spawnBurst = (
       continue
     }
 
-    const angle = randomBetween(0, Math.PI * 2)
     const inner = burst.shardsInnerRadius
     const outer = Math.max(burst.shardsOuterRadius, inner)
-    const radialDistance = Math.sqrt(randomBetween(inner * inner, outer * outer))
-    const spawnX = Math.cos(angle) * radialDistance
-    const spawnY = Math.sin(angle) * radialDistance
-    const directionLength = Math.hypot(spawnX, spawnY) || 1
-
-    particle.startTime = currentTime
-    particle.lifetime = randomBetween(config.shards.burst.lifetimeMin, config.shards.burst.lifetimeMax)
-    particle.spawnX = spawnX
-    particle.spawnY = spawnY
-    particle.dirX = spawnX / directionLength
-    particle.dirY = spawnY / directionLength
-    particle.speed = randomBetween(config.shards.burst.speedMin, config.shards.burst.speedMax)
-    particle.rotation = randomBetween(0, Math.PI * 2)
-    particle.spriteIndex = Math.random() < 0.5 ? 0 : 1
-    particle.sizeMultiplier = randomBetween(config.shards.burst.sizeMin, config.shards.burst.sizeMax)
-    particle.flashTimeWarp = randomBetween(config.shards.alpha.flashTimeWarpMin, config.shards.alpha.flashTimeWarpMax)
-    particle.enabled = 1
+    emitShardParticle(particle, currentTime, {
+      originX: 0,
+      originY: 0,
+      innerRadius: inner,
+      outerRadius: outer,
+      speedMin: config.shards.burst.speedMin,
+      speedMax: config.shards.burst.speedMax,
+      lifetimeMin: config.shards.burst.lifetimeMin,
+      lifetimeMax: config.shards.burst.lifetimeMax,
+      sizeMin: config.shards.burst.sizeMin,
+      sizeMax: config.shards.burst.sizeMax,
+      flashTimeWarpMin: config.shards.alpha.flashTimeWarpMin,
+      flashTimeWarpMax: config.shards.alpha.flashTimeWarpMax,
+      spriteIndex: Math.random() < 0.5 ? 0 : 1,
+    })
     burst.shardsDuration = Math.max(burst.shardsDuration, particle.lifetime)
   }
 
@@ -811,12 +816,12 @@ export const getBurstCompositeBounds = (burst: BurstState, config: TouchEffectCo
   return createBounds(-radius, radius, -radius, radius)
 }
 
-export const getBurstShardsBounds = (burst: BurstState, config: TouchEffectConfig): BurstBounds =>
+const getShardParticleExtents = (particles: FragmentParticleState[]) =>
 {
   let maxSpeed = 0
   let maxSizeMultiplier = 0
 
-  burst.shardParticles.forEach((particle) =>
+  particles.forEach((particle) =>
   {
     if (!particle.enabled)
     {
@@ -827,16 +832,35 @@ export const getBurstShardsBounds = (burst: BurstState, config: TouchEffectConfi
     maxSizeMultiplier = Math.max(maxSizeMultiplier, particle.sizeMultiplier)
   })
 
+  return {
+    maxSpeed,
+    maxSizeMultiplier: Math.max(maxSizeMultiplier, 1),
+  }
+}
+
+const getShardSpriteRadius = (
+  triangleSize: number,
+  maxSizeMultiplier: number,
+  config: TouchEffectConfig
+) =>
+{
   const scaleOverLifeMax = Math.max(
     config.shards.scaleOverLife.start,
     config.shards.scaleOverLife.peak,
     config.shards.scaleOverLife.end
   )
-  const initScaleMax = Math.max(config.shards.initScale.start, config.shards.initScale.end)
-  const spriteRadius = 0.05
-    * burst.shardsTriangleSize
-    * Math.max(maxSizeMultiplier, 1)
+
+  return 0.05
+    * triangleSize
+    * maxSizeMultiplier
     * scaleOverLifeMax
+}
+
+export const getBurstShardsBounds = (burst: BurstState, config: TouchEffectConfig): BurstBounds =>
+{
+  const { maxSpeed, maxSizeMultiplier } = getShardParticleExtents(burst.shardParticles)
+  const initScaleMax = Math.max(config.shards.initScale.start, config.shards.initScale.end)
+  const spriteRadius = getShardSpriteRadius(burst.shardsTriangleSize, maxSizeMultiplier, config)
   const centerRadius = burst.shardsOuterRadius + maxSpeed
   const radius = (centerRadius + spriteRadius) * initScaleMax * config.compositor.effectScale
 
@@ -850,29 +874,8 @@ export const getSwipeShardsBounds = (stroke: SwipeStrokeState, config: TouchEffe
     return createBounds()
   }
 
-  let maxSpeed = 0
-  let maxSizeMultiplier = 0
-  stroke.shardParticles.forEach((particle) =>
-  {
-    if (!particle.enabled)
-    {
-      return
-    }
-
-    maxSpeed = Math.max(maxSpeed, particle.speed)
-    maxSizeMultiplier = Math.max(maxSizeMultiplier, particle.sizeMultiplier)
-  })
-
-  const scaleOverLifeMax = Math.max(
-    config.shards.scaleOverLife.start,
-    config.shards.scaleOverLife.peak,
-    config.shards.scaleOverLife.end
-  )
-  const initScaleMax = Math.max(config.shards.initScale.start, config.shards.initScale.end)
-  const spriteRadius = 0.05
-    * config.shards.shape.triangleSize
-    * Math.max(maxSizeMultiplier, 1)
-    * scaleOverLifeMax
+  const { maxSpeed, maxSizeMultiplier } = getShardParticleExtents(stroke.shardParticles)
+  const spriteRadius = getShardSpriteRadius(config.shards.shape.triangleSize, maxSizeMultiplier, config)
   const emissionPadding = maxSpeed + spriteRadius + config.swipe.trail.width * 2.0
 
   return createBounds(

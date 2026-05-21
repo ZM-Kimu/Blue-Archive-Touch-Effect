@@ -77,7 +77,7 @@ fx.dispose()
 
 - `target`: required host element for the overlay canvas.
 - `listenTarget`: optional element or `window` used for pointer input.
-- `config`: optional runtime config patch.
+- `config`: optional TouchEffect config patch.
 - `pixelRatioCap`: optional device-pixel-ratio cap, default `2`.
 - `autoBindPointer`: when `true`, the runtime automatically binds click and swipe pointer events.
 

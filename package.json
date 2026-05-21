@@ -8,14 +8,15 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run build:package && node --test packages/touch-effect/test/**/*.test.mjs",
-    "dev": "npm run build -w packages/touch-effect && npm run dev -w apps/lab",
+    "test": "npm run build:package && npm run test:package",
+    "test:package": "node --test packages/touch-effect/test/**/*.test.mjs",
+    "dev": "npm run dev -w apps/lab",
     "build": "npm run build -w packages/touch-effect && npm run build -w apps/lab",
-    "verify": "npm test && npm run build && npm pack -w packages/touch-effect",
+    "verify": "npm run build && npm run test:package && npm run pack:package",
     "build:package": "npm run build -w packages/touch-effect",
     "build:lab": "npm run build -w apps/lab",
     "preview": "npm run preview -w apps/lab",
-    "pack:package": "npm pack -w packages/touch-effect"
+    "pack:package": "node -e \"require('node:fs').mkdirSync('artifacts',{recursive:true})\" && npm pack -w packages/touch-effect --pack-destination artifacts"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

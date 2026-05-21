@@ -89,7 +89,7 @@ jobs:
         run: npm run build -w packages/touch-effect
 
       - name: Pack package
-        run: npm pack -w packages/touch-effect
+        run: mkdir -p artifacts && npm pack -w packages/touch-effect --pack-destination artifacts
 
       - name: Publish to npm
         shell: bash
@@ -127,7 +127,7 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
           gh release create "${GITHUB_REF_NAME}" \
-            blue-archive-touch-effect-*.tgz \
+            artifacts/blue-archive-touch-effect-*.tgz \
             --title "blue-archive-touch-effect v${PACKAGE_VERSION}" \
             --notes-file RELEASE_NOTES.md \
             ${PRERELEASE_FLAG}
@@ -136,5 +136,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: published-touch-effect-package
-          path: blue-archive-touch-effect-*.tgz
+          path: artifacts/blue-archive-touch-effect-*.tgz
           if-no-files-found: error

@@ -151,7 +151,7 @@ export const createDebugPanel = ({
   panel.className = 'debug-panel'
   panel.innerHTML = `
     <div class="debug-panel__header">
-      <strong>Click FX VNext</strong>
+      <strong>TouchEffect Lab</strong>
       <span>Layer-driven controls for arc, disk, shards, swipe trail, compositor, mixer, and postfx.</span>
     </div>
     <div class="debug-live">
@@ -182,7 +182,7 @@ export const createDebugPanel = ({
         </div>
       </section>
     </div>
-    <div class="debug-tabs" role="tablist" aria-label="VNext panels">
+    <div class="debug-tabs" role="tablist" aria-label="TouchEffect panels">
       ${panelDefinitions.map((entry) => `
         <button
           class="debug-tab"
@@ -197,7 +197,7 @@ export const createDebugPanel = ({
     <div class="debug-branches">
       ${panelDefinitions.map(createPanelMarkup).join('')}
     </div>
-    <p class="debug-hint">Nested runtime config updates apply by section. Generator-heavy controls still mostly affect the next click.</p>
+    <p class="debug-hint">Nested TouchEffect config updates apply by section. Generator-heavy controls still mostly affect the next click.</p>
   `
 
   shell.appendChild(panel)

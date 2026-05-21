@@ -1,4 +1,5 @@
 import { Polyline, Vec3 } from 'ogl'
+import type { OGLRenderingContext } from 'ogl'
 import { MAX_SWIPE_POINTS_PER_STROKE } from '../core/constants'
 import swipeTrailFragment from './shaders/swipe-trail.frag'
 import swipeTrailVertex from './shaders/swipe-trail.vert'
@@ -10,7 +11,7 @@ export type TrailRuntimeState = {
   dpr: number
 }
 
-export const createTrailPolyline = (gl: any) =>
+export const createTrailPolyline = (gl: OGLRenderingContext) =>
 {
   const points = Array.from({ length: MAX_SWIPE_POINTS_PER_STROKE }, () => new Vec3(-2, -2, 0))
   const ageData = new Float32Array(MAX_SWIPE_POINTS_PER_STROKE * 2)

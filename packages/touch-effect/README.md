@@ -14,7 +14,7 @@ npm install blue-archive-touch-effect
 - Adds a transparent overlay canvas with `pointer-events: none`
 - Triggers local click burst effects without taking over the full page
 - Adds a swipe trail ribbon plus distance-emitted swipe shards on drag
-- Exposes a small runtime API for spawning, config updates, resize, and cleanup
+- Exposes a small runtime API for manual triggering, config updates, resize, and cleanup
 
 ## Minimal Usage
 
@@ -177,7 +177,7 @@ The renderer prefers an HDR offscreen path and falls back to an LDR approximatio
 
 - `target`: required host element for the overlay canvas
 - `listenTarget`: optional element or window used for pointer listening
-- `config`: optional partial runtime config
+- `config`: optional partial TouchEffect config
 - `pixelRatioCap`: optional device-pixel-ratio cap for the renderer
 - `autoBindPointer`: when `true`, the runtime adds its own pointer listeners for click + swipe
 
@@ -232,11 +232,13 @@ These preview controls are lab/debug behavior, not part of the public runtime AP
 
 This package ships browser-ready JavaScript and bundled shader assets. Consumers do not need to configure a GLSL loader.
 
-Published artifacts:
+Published files include:
 
 - `dist/index.mjs`
 - `dist/index.cjs`
 - `dist/index.d.ts`
+- source maps for the JavaScript bundles
+- internal declaration files used by the root declaration
 
 ## License
 

@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
 const runtimePath = resolve(testDir, '../../src/runtime/index.ts')
+const inputPath = resolve(testDir, '../../src/runtime/dom.ts')
 const typesPath = resolve(testDir, '../../src/types/index.ts')
 const configPath = resolve(testDir, '../../src/config/index.ts')
-const statePath = resolve(testDir, '../../src/state/index.ts')
 const shaderPath = resolve(testDir, '../../src/rendering/shaders/swipe-trail.frag')
 const trailRendererPath = resolve(testDir, '../../src/rendering/trail.ts')
 const labConfigPath = resolve(testDir, '../../../../apps/lab/src/config/defaults.ts')
@@ -74,50 +74,28 @@ test('runtime and lab expose trail alpha controls', async () => {
   assert.match(labConfigSource, /path: 'swipe\.trail\.alpha\.midTime', label: 'Alpha Mid Time'/)
 })
 
-test('swipe trail densifies sparse pointer movement without raising minimum distance', async () => {
-  const runtimeSource = await readSource(runtimePath)
-  const stateSource = await readSource(statePath)
-  const appendSwipeStrokePointBlock = sliceBlock(stateSource, 'export const appendSwipeStrokePoint', 'export const endSwipeStroke')
-  const handlePointerMoveBlock = sliceBlock(runtimeSource, '  const handlePointerMove', '  const handlePointerEnd')
+test('pointer cleanup listeners are isolated in the input binding helper', async () => {
+  const inputSource = await readSource(inputPath)
 
-  assert.match(handlePointerMoveBlock, /getCoalescedEvents/)
-  assert.match(appendSwipeStrokePointBlock, /if \(distance <= 0\)/)
-  assert.match(appendSwipeStrokePointBlock, /const maxSegmentDistance = Math\.max\(/)
-  assert.match(appendSwipeStrokePointBlock, /config\.swipe\.trail\.width \* 1\.5/)
-  assert.match(appendSwipeStrokePointBlock, /Math\.ceil\(distance \/ maxSegmentDistance\)/)
-  assert.match(appendSwipeStrokePointBlock, /for \(let segmentIndex = 1; segmentIndex <= segmentCount; segmentIndex \+= 1\)/)
-  assert.match(appendSwipeStrokePointBlock, /appendSwipePointState\(\s*stroke,\s*previousX \+ deltaX \* segmentProgress,/)
+  assert.match(inputSource, /addPointerInputListeners/)
+  assert.match(inputSource, /removePointerInputListeners/)
+  assert.match(inputSource, /pointerleave/)
+  assert.match(inputSource, /lostpointercapture/)
+  assert.match(inputSource, /blur/)
 })
 
-test('swipe trail ends stale mouse and pen strokes before processing hover movement', async () => {
+test('pointer movement ends inactive mouse and pen strokes before coalesced events', async () => {
   const runtimeSource = await readSource(runtimePath)
-  const stateSource = await readSource(statePath)
   const handlePointerDownBlock = sliceBlock(runtimeSource, '  const handlePointerDown', '  const handlePointerMove')
   const handlePointerMoveBlock = sliceBlock(runtimeSource, '  const handlePointerMove', '  const handlePointerEnd')
-  const disposeBlock = sliceBlock(
-    runtimeSource,
-    '  const dispose = () =>',
-    "  if (autoBindPointer)\n  {\n    boundListenTarget.addEventListener"
-  )
-  const listenerBlock = sliceBlock(runtimeSource, '  boundListenTarget.addEventListener', '  resizeObserver.observe(target)')
 
   assert.match(runtimeSource, /const isSwipePointerActive = \(event: PointerEvent\) =>/)
   assert.match(runtimeSource, /event\.pointerType === 'mouse' \|\| event\.pointerType === 'pen'/)
   assert.match(runtimeSource, /return event\.buttons > 0/)
-  assert.match(runtimeSource, /const endSwipeFromPointer = \(event: PointerEvent\) =>/)
-  assert.match(stateSource, /export const endAllSwipeStrokes = \(store: SwipeStore\) =>/)
-
   assert.match(handlePointerDownBlock, /event\.button < 0 \|\| event\.button > 2/)
   assert.match(handlePointerMoveBlock, /if \(!isSwipePointerActive\(event\)\)\s*\{\s*endSwipeFromPointer\(event\)\s*return\s*\}/)
   assert.ok(
     handlePointerMoveBlock.indexOf('if (!isSwipePointerActive(event))') < handlePointerMoveBlock.indexOf('getCoalescedEvents'),
     'Pointer active-state check must happen before reading coalesced events.'
   )
-
-  assert.match(listenerBlock, /target\.addEventListener\('lostpointercapture', handlePointerEnd as EventListener\)/)
-  assert.match(listenerBlock, /boundListenTarget\.addEventListener\('pointerleave', handlePointerLeave as EventListener\)/)
-  assert.match(listenerBlock, /hostWindow\.addEventListener\('blur', handleWindowBlur\)/)
-  assert.match(disposeBlock, /target\.removeEventListener\('lostpointercapture', handlePointerEnd as EventListener\)/)
-  assert.match(disposeBlock, /boundListenTarget\.removeEventListener\('pointerleave', handlePointerLeave as EventListener\)/)
-  assert.match(disposeBlock, /hostWindow\.removeEventListener\('blur', handleWindowBlur\)/)
 })

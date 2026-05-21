@@ -1,5 +1,3 @@
-export type UniformValue<T> = { value: T }
-
 export const mixerModes = ['add', 'screen', 'max'] as const
 export type MixerMode = (typeof mixerModes)[number]
 
@@ -249,20 +247,7 @@ export type SwipePointState = {
   enabled: number
 }
 
-export type SwipeShardParticleState = {
-  startTime: number
-  lifetime: number
-  spawnX: number
-  spawnY: number
-  dirX: number
-  dirY: number
-  speed: number
-  rotation: number
-  spriteIndex: number
-  sizeMultiplier: number
-  flashTimeWarp: number
-  enabled: number
-}
+export type SwipeShardParticleState = FragmentParticleState
 
 export type BurstBounds = {
   minX: number

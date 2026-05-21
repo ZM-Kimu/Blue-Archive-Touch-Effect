@@ -18,6 +18,10 @@ test('built package exposes TouchEffect API and omits removed ClickFx names', as
   assert.equal('createClickFx' in api, false)
   assert.equal('createRuntimeConfig' in api, false)
   assert.equal('defaultRuntimeConfig' in api, false)
+  assert.equal('spawnAtClient' in api, false)
+  assert.equal('spawnAtLocal' in api, false)
+  assert.equal('spawnClickAtClient' in api, false)
+  assert.equal('spawnClickAtLocal' in api, false)
 })
 
 test('built config helpers deep-clone and merge partial config patches', async () => {
