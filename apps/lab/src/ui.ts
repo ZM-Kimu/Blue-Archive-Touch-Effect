@@ -152,13 +152,13 @@ export const createDebugPanel = ({
   panel.innerHTML = `
     <div class="debug-panel__header">
       <strong>Click FX VNext</strong>
-      <span>Layer-driven controls for arc, disk, shards, compositor, mixer, and postfx.</span>
+      <span>Layer-driven controls for arc, disk, shards, swipe trail, compositor, mixer, and postfx.</span>
     </div>
     <div class="debug-live">
       <section class="debug-live__section">
         <div class="debug-live__header">
           <strong>Preview</strong>
-          <span>Solo a layer or inspect the composite. PostFX Off bypasses the filter pass.</span>
+          <span>Solo a layer or inspect the composite. Trail isolates the swipe ribbon. PostFX Off bypasses the filter pass.</span>
         </div>
         <div class="debug-live__body">
           <label class="debug-select">

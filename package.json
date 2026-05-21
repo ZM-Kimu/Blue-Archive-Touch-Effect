@@ -8,9 +8,10 @@
     "apps/*"
   ],
   "scripts": {
+    "test": "node --test packages/click-fx/test/*.test.mjs",
     "dev": "npm run build -w packages/click-fx && npm run dev -w apps/lab",
     "build": "npm run build -w packages/click-fx && npm run build -w apps/lab",
-    "verify": "npm run build && npm pack -w packages/click-fx",
+    "verify": "npm test && npm run build && npm pack -w packages/click-fx",
     "build:package": "npm run build -w packages/click-fx",
     "build:lab": "npm run build -w apps/lab",
     "preview": "npm run preview -w apps/lab",

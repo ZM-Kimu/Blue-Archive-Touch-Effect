@@ -1,35 +1,35 @@
 <div align="center">
 
-# Blue Archive Cursor Touch Effect
+# 碧蓝档案光标触控效果
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
 <br />
 
-<img src="./assets/cursor-demo.gif" alt="Cursor touch effect demo" width="720" />
+<img src="./assets/cursor-demo.gif" alt="光标触控效果展示" width="720" />
 
-Just a simple shader effect for Web Canvas.
+只是一个简单的 shader 效果，适用于 Web Canvas。
 
 </div>
 
 
 
-## Quick Start
+## 快速开始
 
-Install dependencies and start the test page:
+安装依赖并启动测试页面：
 
 ```bash
 npm install
 npm run dev
 ```
 
-Build the project:
+构建项目：
 
 ```bash
 npm run build
 ```
 
-## Use The NPM Package
+## 使用NPM包
 
 ```bash
 npm install blue-archive-touch-effect
@@ -47,9 +47,9 @@ if (!target) {
 const fx = createClickFx({ target })
 ```
 
-The runtime appends an overlay canvas to `target`. If the target is statically positioned, the runtime temporarily sets it to `position: relative` and restores it on `dispose()`.
+运行时会向 `target` 添加覆盖画布。如果目标元素是静态定位，运行时会临时设置为 `position: relative`，并在 `dispose()` 时恢复。
 
-## Runtime API
+## 运行时 API
 
 ```ts
 const fx = createClickFx({
@@ -75,17 +75,17 @@ fx.resize()
 fx.dispose()
 ```
 
-### Options
+### 创建参数
 
-- `target`: required host element for the overlay canvas.
-- `listenTarget`: optional element or `window` used for pointer input.
-- `config`: optional runtime config patch.
-- `pixelRatioCap`: optional device-pixel-ratio cap, default `2`.
-- `autoBindPointer`: when `true`, the runtime automatically binds click and swipe pointer events.
+- `target`：必填，覆盖画布挂载的宿主元素。
+- `listenTarget`：可选，用于监听 pointer 输入的元素或 `window`。
+- `config`：可选，运行时配置补丁。
+- `pixelRatioCap`：可选，设备像素比上限，默认 `2`。
+- `autoBindPointer`：为 `true` 时，运行时自动绑定点击和滑动 pointer 事件。
 
-### Manual Triggering
+### 手动触发
 
-By default, the runtime owns pointer input. Set `autoBindPointer: false` if your app wants to decide exactly when click bursts or trails begin, move, and end.
+默认运行时会接管 pointer 输入。如果应用希望自己决定 click burst 或 trail 的开始、移动和结束时机，可以设置 `autoBindPointer: false`。
 
 ```ts
 const fx = createClickFx({
@@ -115,7 +115,7 @@ window.addEventListener('blur', () => {
 })
 ```
 
-## Configuration Example
+## 配置示例
 
 ```ts
 fx.updateConfig({
@@ -150,13 +150,13 @@ fx.updateConfig({
 })
 ```
 
-`updateConfig(...)` deep-merges by section, so callers only need to pass the fields they want to change.
+`updateConfig(...)` 会按 section 深度合并配置，因此只需要传入要修改的字段。
 
-## References
+## 引用
 
-- Click effect reference: [Blue Archive touch fx process](https://www.youtube.com/watch?v=Ho7BbVUr71Q).
-- Trail effect reference: actual game decompiled content.
+- 点击效果参照：[Blue Archive touch fx process](https://www.youtube.com/watch?v=Ho7BbVUr71Q)。
+- 拖尾效果参照：游戏实际反编译内容。
 
 ## License
 
-This project uses the MIT License. See [LICENSE](./LICENSE).
+本项目使用 MIT License，见 [LICENSE](./LICENSE)。

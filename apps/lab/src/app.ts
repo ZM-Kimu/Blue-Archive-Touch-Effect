@@ -133,8 +133,9 @@ export const bootstrapClickFx = () =>
 
   const runtime = createClickFx({
     target: stage,
+    listenTarget: stage,
     config,
-    autoBindPointer: false,
+    autoBindPointer: true,
   }) as LabClickFxInstance
 
   const syncControls = () =>
@@ -144,21 +145,5 @@ export const bootstrapClickFx = () =>
     panelController.sync()
   }
 
-  const handlePressSpawn = (event: MouseEvent) =>
-  {
-    if (event.target instanceof HTMLElement && event.target.closest('.debug-panel'))
-    {
-      return
-    }
-
-    if (event.button < 0 || event.button > 2)
-    {
-      return
-    }
-
-    runtime.spawnAtClient(event.clientX, event.clientY)
-  }
-
-  panelController.shell.addEventListener('mousedown', handlePressSpawn)
   syncControls()
 }

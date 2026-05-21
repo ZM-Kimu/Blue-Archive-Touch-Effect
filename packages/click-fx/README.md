@@ -13,6 +13,7 @@ npm install blue-archive-touch-effect
 - Attaches to any container element
 - Adds a transparent overlay canvas with `pointer-events: none`
 - Spawns local click burst FX without taking over the full page
+- Adds a swipe trail ribbon plus distance-emitted swipe shards on drag
 - Exposes a small runtime API for spawning, config updates, resize, and cleanup
 
 ## Minimal Usage
@@ -27,10 +28,6 @@ if (!target) {
 }
 
 const fx = createClickFx({ target })
-
-target.addEventListener('mousedown', (event) => {
-  fx.spawnAtClient(event.clientX, event.clientY)
-})
 ```
 
 ## Layer Model
@@ -41,11 +38,13 @@ The renderer is organized as a layered pipeline:
   - includes `arc.alpha.multiplier`
 - `disk`: filled disk shape, scale timing, alpha timing, color
 - `shards`: burst distribution, Unity `Ring (3)` size-over-life, keyed flashing alpha with time-warp controls, tinted lifetime palette
+- `swipe`: drag input, trail ribbon, and `Ring (4)`-style distance-emitted shard pairs
 - `compositor`: shared transform timing for `arc + disk`
-- `mixer`: final color mix across `arc + disk + shards`
+- `mixer`: final color mix across `arc + disk + shards`, plus trail compositing via `trailWeight`
 - `postfx`: bloom and tonemapping
 
-`arc` and `disk` share the compositor transform. `shards` stay outside that shared transform and only join at the final mixer stage.
+`arc` and `disk` share the compositor transform. `shards` stay outside that shared transform. The swipe trail is rendered as a dedicated ribbon layer and joins only at the final mixer stage.
+Swipe shards use their own pointer-centered ring radius and no longer inherit click-shard distribution settings.
 
 ## Configuration
 
@@ -58,7 +57,7 @@ const fx = createClickFx({
   target: document.body,
   config: {
     arc: {
-      color: { r: 0.23, g: 0.9, b: 1 },
+      color: { r: 0x4C / 255, g: 0xA7 / 255, b: 1 },
       warp: { angleSpanDeg: 360, radius: 0.177 },
     },
     disk: {
@@ -69,6 +68,42 @@ const fx = createClickFx({
       arcWeight: 1.02,
       diskWeight: 0.75,
       shardsWeight: 1.2,
+      trailWeight: 1,
+    },
+    swipe: {
+      input: {
+        minPointDistance: 0,
+        pointerCapture: true,
+      },
+      trail: {
+        lifetime: 0.29,
+        width: 0.008,
+        minVertexDistance: 0.02,
+        cornerVertices: 1,
+        capVertices: 1,
+        intensity: 2.2,
+        startColor: { r: 0, g: 0x64 / 255, b: 1 },
+        midColor: { r: 0, g: 0x64 / 255, b: 1 },
+        endColor: { r: 0, g: 0x64 / 255, b: 1 },
+        midTime: 0.2,
+        alpha: {
+          start: 1,
+          mid: 1,
+          end: 0,
+          midTime: 0.6,
+        },
+      },
+      shards: {
+        emitPerDistance: 3,
+        innerRadius: 0,
+        outerRadius: 0.02,
+        speedMin: 0.02,
+        speedMax: 0.08,
+        lifetimeMin: 0.2,
+        lifetimeMax: 0.44,
+        sizeMin: 0.2,
+        sizeMax: 0.32,
+      },
     },
     postfx: {
       bloom: {
@@ -126,8 +161,15 @@ The renderer prefers an HDR offscreen path and falls back to an LDR approximatio
 ## API
 
 - `createClickFx({ target, config, listenTarget, pixelRatioCap, autoBindPointer })`
-- `spawnAtClient(x, y)`
-- `spawnAtLocal(x, y)`
+- `spawnClickAtClient(x, y)`
+- `spawnClickAtLocal(x, y)`
+- `spawnAtClient(x, y)` / `spawnAtLocal(x, y)` legacy aliases for click spawning
+- `beginTrailAtClient(pointerId, x, y)`
+- `appendTrailAtClient(pointerId, x, y)`
+- `beginTrailAtLocal(pointerId, x, y)`
+- `appendTrailAtLocal(pointerId, x, y)`
+- `endTrail(pointerId)`
+- `endAllTrails()`
 - `updateConfig(partial)`
 - `resize()`
 - `dispose()`
@@ -138,7 +180,41 @@ The renderer prefers an HDR offscreen path and falls back to an LDR approximatio
 - `listenTarget`: optional element or window used for pointer listening
 - `config`: optional partial runtime config
 - `pixelRatioCap`: optional device-pixel-ratio cap for the renderer
-- `autoBindPointer`: when `true`, the runtime adds its own `mousedown` listener
+- `autoBindPointer`: when `true`, the runtime adds its own pointer listeners for click + swipe
+
+## Manual Triggering
+
+Set `autoBindPointer: false` when your application owns the input lifecycle. Click bursts and trails can then be scheduled independently.
+
+```ts
+const fx = createClickFx({
+  target,
+  autoBindPointer: false,
+})
+
+target.addEventListener('pointerdown', (event) => {
+  fx.spawnClickAtClient(event.clientX, event.clientY)
+  fx.beginTrailAtClient(event.pointerId, event.clientX, event.clientY)
+})
+
+target.addEventListener('pointermove', (event) => {
+  if (event.buttons > 0 || event.pointerType === 'touch') {
+    fx.appendTrailAtClient(event.pointerId, event.clientX, event.clientY)
+  } else {
+    fx.endTrail(event.pointerId)
+  }
+})
+
+target.addEventListener('pointerup', (event) => {
+  fx.endTrail(event.pointerId)
+})
+
+window.addEventListener('blur', () => {
+  fx.endAllTrails()
+})
+```
+
+Client-coordinate trail methods convert from viewport coordinates into the target element. Local-coordinate methods accept CSS pixels relative to the target's top-left corner. `appendTrail...` returns `false` when no active trail point was appended, for example because the trail is disabled or the movement was below the configured minimum distance.
 
 ## Preview and Debug
 
@@ -148,6 +224,7 @@ The package public API stays renderer-focused. The bundled lab app adds layer-le
 - `arc`
 - `disk`
 - `shards`
+- `trail`
 - `postfxOff`
 
 These preview controls are lab/debug behavior, not part of the public runtime API.

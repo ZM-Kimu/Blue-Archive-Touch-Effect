@@ -9,7 +9,7 @@ export type TonemappingMode = (typeof tonemappingModes)[number]
 export const bloomDownscaleModes = ['half', 'quarter'] as const
 export type BloomDownscaleMode = (typeof bloomDownscaleModes)[number]
 
-export const layerPreviewModes = ['composite', 'arc', 'disk', 'shards', 'postfxOff'] as const
+export const layerPreviewModes = ['composite', 'arc', 'disk', 'shards', 'trail', 'postfxOff'] as const
 export type LayerPreviewMode = (typeof layerPreviewModes)[number]
 
 export type ColorRgb = {
@@ -108,6 +108,48 @@ export type ShardsConfig = {
   }
 }
 
+export type SwipeConfig = {
+  enabled: boolean
+  input: {
+    minPointDistance: number
+    pointerCapture: boolean
+  }
+  trail: {
+    lifetime: number
+    width: number
+    minVertexDistance: number
+    cornerVertices: number
+    capVertices: number
+    intensity: number
+    startColor: ColorRgb
+    midColor: ColorRgb
+    endColor: ColorRgb
+    midTime: number
+    alpha: {
+      start: number
+      mid: number
+      end: number
+      midTime: number
+    }
+  }
+  shards: {
+    enabled: boolean
+    emitPerDistance: number
+    innerRadius: number
+    outerRadius: number
+    speedMin: number
+    speedMax: number
+    lifetimeMin: number
+    lifetimeMax: number
+    sizeMin: number
+    sizeMax: number
+    flashTimeWarpMin: number
+    flashTimeWarpMax: number
+    tint: ColorRgb
+    peakBoost: number
+  }
+}
+
 export type CompositorConfig = {
   sharedScale: {
     start: number
@@ -124,6 +166,7 @@ export type MixerConfig = {
   arcWeight: number
   diskWeight: number
   shardsWeight: number
+  trailWeight: number
   mode: MixerMode
   gain: number
 }
@@ -154,6 +197,7 @@ export type RuntimeConfig = {
   arc: ArcConfig
   disk: DiskConfig
   shards: ShardsConfig
+  swipe: SwipeConfig
   compositor: CompositorConfig
   mixer: MixerConfig
   postfx: PostfxConfig
@@ -183,6 +227,29 @@ export type ParticleState = {
 }
 
 export type FragmentParticleState = {
+  startTime: number
+  lifetime: number
+  spawnX: number
+  spawnY: number
+  dirX: number
+  dirY: number
+  speed: number
+  rotation: number
+  spriteIndex: number
+  sizeMultiplier: number
+  flashTimeWarp: number
+  enabled: number
+}
+
+export type SwipePointState = {
+  x: number
+  y: number
+  time: number
+  cumulativeDistance: number
+  enabled: number
+}
+
+export type SwipeShardParticleState = {
   startTime: number
   lifetime: number
   spawnX: number
@@ -234,6 +301,26 @@ export type BurstStore = {
   nextBurstIndex: number
 }
 
+export type SwipeStrokeState = {
+  originX: number
+  originY: number
+  pointerId: number
+  active: number
+  appending: number
+  pointCount: number
+  lastEmitDistance: number
+  trailLifetime: number
+  nextShardIndex: number
+  bounds: BurstBounds
+  points: SwipePointState[]
+  shardParticles: SwipeShardParticleState[]
+}
+
+export type SwipeStore = {
+  strokes: SwipeStrokeState[]
+  nextStrokeIndex: number
+}
+
 export type CreateClickFxOptions = {
   target: HTMLElement
   listenTarget?: HTMLElement | Window
@@ -246,6 +333,14 @@ export type ClickFxInstance = {
   canvas: HTMLCanvasElement
   spawnAtClient: (clientX: number, clientY: number) => void
   spawnAtLocal: (x: number, y: number) => void
+  spawnClickAtClient: (clientX: number, clientY: number) => void
+  spawnClickAtLocal: (x: number, y: number) => void
+  beginTrailAtClient: (pointerId: number, clientX: number, clientY: number) => void
+  appendTrailAtClient: (pointerId: number, clientX: number, clientY: number) => boolean
+  beginTrailAtLocal: (pointerId: number, x: number, y: number) => void
+  appendTrailAtLocal: (pointerId: number, x: number, y: number) => boolean
+  endTrail: (pointerId: number) => void
+  endAllTrails: () => void
   updateConfig: (partial: RuntimeConfigPatch) => void
   resize: () => void
   dispose: () => void

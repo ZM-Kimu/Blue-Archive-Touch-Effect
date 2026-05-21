@@ -24,6 +24,7 @@ export const panelDefinitions: PanelDefinition[] = [
   { key: 'arc', title: 'Arc', subtitle: 'Arc emitter and warp' },
   { key: 'disk', title: 'Disk', subtitle: 'Disk emitter and alpha' },
   { key: 'shards', title: 'Shards', subtitle: 'Shard burst and color' },
+  { key: 'swipe', title: 'Swipe', subtitle: 'Trail ribbon and swipe shard emission' },
   { key: 'compositor', title: 'Compositor', subtitle: 'Shared arc + disk timing' },
   { key: 'mixer', title: 'Mixer', subtitle: 'Final color composition' },
   { key: 'postfx', title: 'PostFX', subtitle: 'Bloom and tonemapping' },
@@ -40,7 +41,9 @@ export const previewOptions: PreviewOption[] = layerPreviewModes.map((value) => 
           ? 'Disk'
           : value === 'shards'
             ? 'Shards'
-            : 'PostFX Off',
+            : value === 'trail'
+              ? 'Trail'
+              : 'PostFX Off',
 }))
 
 const mixerModeOptions: { value: MixerMode; label: string }[] = mixerModes.map((value) => ({
@@ -137,7 +140,33 @@ export const numericControls: NumericControlDefinition[] = [
   { panel: 'mixer', group: 'Weights', path: 'mixer.arcWeight', label: 'Arc Weight', min: 0, max: 2, step: 0.01 },
   { panel: 'mixer', group: 'Weights', path: 'mixer.diskWeight', label: 'Disk Weight', min: 0, max: 2, step: 0.01 },
   { panel: 'mixer', group: 'Weights', path: 'mixer.shardsWeight', label: 'Shards Weight', min: 0, max: 2, step: 0.01 },
+  { panel: 'mixer', group: 'Weights', path: 'mixer.trailWeight', label: 'Trail Weight', min: 0, max: 2, step: 0.01 },
   { panel: 'mixer', group: 'Mode', path: 'mixer.gain', label: 'Gain', min: 0, max: 3, step: 0.01 },
+
+  { panel: 'swipe', group: 'Input', path: 'swipe.input.minPointDistance', label: 'Min Point Distance', min: 0, max: 0.05, step: 0.0005 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.lifetime', label: 'Lifetime', min: 0.05, max: 1, step: 0.01 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.width', label: 'Width', min: 0, max: 0.03, step: 0.0005 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.minVertexDistance', label: 'Min Vertex Distance', min: 0, max: 0.05, step: 0.0005 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.cornerVertices', label: 'Corner Vertices', min: 0, max: 8, step: 1 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.capVertices', label: 'Cap Vertices', min: 0, max: 4, step: 1 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.intensity', label: 'Intensity', min: 0, max: 24, step: 0.1 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.midTime', label: 'Mid Time', min: 0.05, max: 0.95, step: 0.01 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.alpha.start', label: 'Alpha Start', min: 0, max: 1, step: 0.01 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.alpha.mid', label: 'Alpha Mid', min: 0, max: 1, step: 0.01 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.alpha.end', label: 'Alpha End', min: 0, max: 1, step: 0.01 },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.alpha.midTime', label: 'Alpha Mid Time', min: 0.05, max: 0.95, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.emitPerDistance', label: 'Emit / Distance', min: 1, max: 12, step: 0.5 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.innerRadius', label: 'Inner Radius', min: 0, max: 0.12, step: 0.0025 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.outerRadius', label: 'Outer Radius', min: 0, max: 0.16, step: 0.0025 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.speedMin', label: 'Speed Min', min: 0.02, max: 0.6, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.speedMax', label: 'Speed Max', min: 0.02, max: 0.6, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.lifetimeMin', label: 'Life Min', min: 0.05, max: 0.8, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.lifetimeMax', label: 'Life Max', min: 0.05, max: 0.8, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.sizeMin', label: 'Size Min', min: 0.2, max: 2, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.sizeMax', label: 'Size Max', min: 0.2, max: 2, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.flashTimeWarpMin', label: 'Flash Warp Min', min: 0.02, max: 0.5, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.flashTimeWarpMax', label: 'Flash Warp Max', min: 0.02, max: 0.5, step: 0.01 },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.peakBoost', label: 'Peak Boost', min: 1, max: 2, step: 0.01 },
 
   { panel: 'postfx', group: 'Bloom', path: 'postfx.bloom.threshold', label: 'Threshold', min: 0, max: 2, step: 0.01 },
   { panel: 'postfx', group: 'Bloom', path: 'postfx.bloom.intensity', label: 'Intensity', min: 0, max: 3, step: 0.01 },
@@ -150,6 +179,9 @@ export const numericControls: NumericControlDefinition[] = [
 
 export const selectControls: SelectControlDefinition[] = [
   { panel: 'mixer', group: 'Mode', path: 'mixer.mode', label: 'Mode', options: mixerModeOptions },
+  { panel: 'swipe', group: 'Input', path: 'swipe.enabled', label: 'Enabled', options: bloomEnabledOptions },
+  { panel: 'swipe', group: 'Input', path: 'swipe.input.pointerCapture', label: 'Pointer Capture', options: postfxEnabledOptions },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.enabled', label: 'Swipe Shards', options: bloomEnabledOptions },
   { panel: 'postfx', group: 'General', path: 'postfx.enabled', label: 'PostFX', options: postfxEnabledOptions },
   { panel: 'postfx', group: 'Bloom', path: 'postfx.bloom.enabled', label: 'Bloom', options: bloomEnabledOptions },
   { panel: 'postfx', group: 'Bloom', path: 'postfx.bloom.highQualityFiltering', label: 'Filtering', options: highQualityFilteringOptions },
@@ -161,6 +193,10 @@ export const colorControls: ColorControlDefinition[] = [
   { panel: 'arc', group: 'Color', path: 'arc.color', label: 'Arc Color' },
   { panel: 'disk', group: 'Color', path: 'disk.color', label: 'Disk Color' },
   { panel: 'shards', group: 'Color', path: 'shards.color.tint', label: 'Shards Tint' },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.startColor', label: 'Start Color' },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.midColor', label: 'Mid Color' },
+  { panel: 'swipe', group: 'Trail', path: 'swipe.trail.endColor', label: 'End Color' },
+  { panel: 'swipe', group: 'Shards', path: 'swipe.shards.tint', label: 'Swipe Shards Tint' },
   { panel: 'postfx', group: 'Bloom', path: 'postfx.bloom.tint', label: 'Tint' },
 ]
 

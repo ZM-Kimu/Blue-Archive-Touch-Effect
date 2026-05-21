@@ -3,7 +3,8 @@ import type {
   RuntimeConfig,
   RuntimeConfigPatch,
 } from './types'
-import {
+import
+{
   mixerModes,
   tonemappingModes,
 } from './types'
@@ -13,7 +14,7 @@ const cloneColor = (color: ColorRgb): ColorRgb => ({ ...color })
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const deepClone = <T>(value: T): T =>
+const deepClone = <T> (value: T): T =>
 {
   if (Array.isArray(value))
   {
@@ -33,7 +34,7 @@ const deepClone = <T>(value: T): T =>
   return clone as T
 }
 
-const mergeObjects = <T extends Record<string, unknown>>(target: T, patch: Record<string, unknown>) =>
+const mergeObjects = <T extends Record<string, unknown>> (target: T, patch: Record<string, unknown>) =>
 {
   const mutableTarget = target as Record<string, unknown>
   Object.entries(patch).forEach(([key, value]) =>
@@ -92,8 +93,8 @@ export const defaultRuntimeConfig: RuntimeConfig = {
       multiplier: 0.9,
     },
     color: {
-      r: 0.23,
-      g: 0.9,
+      r: 0x4C / 255,
+      g: 0xA7 / 255,
       b: 1,
     },
   },
@@ -162,6 +163,63 @@ export const defaultRuntimeConfig: RuntimeConfig = {
       peakBoost: 1,
     },
   },
+  swipe: {
+    enabled: true,
+    input: {
+      minPointDistance: 0,
+      pointerCapture: true,
+    },
+    trail: {
+      lifetime: 0.29,
+      width: 0.0035,
+      minVertexDistance: 0.02,
+      cornerVertices: 1,
+      capVertices: 1,
+      intensity: 2.2,
+      startColor: {
+        r: 0,
+        g: 0.39215687,
+        b: 1,
+      },
+      midColor: {
+        r: 0,
+        g: 0.39215687,
+        b: 1,
+      },
+      endColor: {
+        r: 0,
+        g: 0.39215687,
+        b: 1,
+      },
+      midTime: 0.2,
+      alpha: {
+        start: 1,
+        mid: 1,
+        end: 0,
+        midTime: 0.6,
+      },
+    },
+    shards: {
+      enabled: true,
+      emitPerDistance: 3,
+      innerRadius: 0,
+      outerRadius: 0.02,
+      speedMin: 0.02,
+      speedMax: 0.08,
+      lifetimeMin: 0.2,
+      lifetimeMax: 0.44,
+      sizeMin: 0.2,
+      sizeMax: 0.32,
+      flashTimeWarpMin: 0.08,
+      flashTimeWarpMax: 0.15,
+      tint: {
+        r: 1,
+        g: 1,
+        b: 1,
+      },
+      peakBoost: 1,
+    },
+  },
   compositor: {
     sharedScale: {
       start: 0.2,
@@ -177,6 +235,7 @@ export const defaultRuntimeConfig: RuntimeConfig = {
     arcWeight: 1.02,
     diskWeight: 0.75,
     shardsWeight: 1.2,
+    trailWeight: 1,
     mode: 'screen',
     gain: 1,
   },
@@ -213,6 +272,10 @@ export const cloneRuntimeConfig = (config: RuntimeConfig = defaultRuntimeConfig)
   clone.arc.color = cloneColor(clone.arc.color)
   clone.disk.color = cloneColor(clone.disk.color)
   clone.shards.color.tint = cloneColor(clone.shards.color.tint)
+  clone.swipe.trail.startColor = cloneColor(clone.swipe.trail.startColor)
+  clone.swipe.trail.midColor = cloneColor(clone.swipe.trail.midColor)
+  clone.swipe.trail.endColor = cloneColor(clone.swipe.trail.endColor)
+  clone.swipe.shards.tint = cloneColor(clone.swipe.shards.tint)
   clone.postfx.bloom.tint = cloneColor(clone.postfx.bloom.tint)
   return clone
 }
@@ -308,6 +371,58 @@ export const applyRuntimeConfigConstraints = (config: RuntimeConfig): RuntimeCon
   config.shards.color.tint = clampColor(config.shards.color.tint)
   config.shards.color.peakBoost = clampNonNegative(config.shards.color.peakBoost)
 
+  config.swipe.enabled = Boolean(config.swipe.enabled)
+  config.swipe.input.minPointDistance = clampNonNegative(config.swipe.input.minPointDistance)
+  config.swipe.input.pointerCapture = Boolean(config.swipe.input.pointerCapture)
+  config.swipe.trail.lifetime = clampNonNegative(config.swipe.trail.lifetime)
+  config.swipe.trail.width = clampNonNegative(config.swipe.trail.width)
+  config.swipe.trail.minVertexDistance = clampNonNegative(config.swipe.trail.minVertexDistance)
+  config.swipe.trail.cornerVertices = Math.max(0, Math.round(config.swipe.trail.cornerVertices))
+  config.swipe.trail.capVertices = Math.max(0, Math.round(config.swipe.trail.capVertices))
+  config.swipe.trail.intensity = clampNonNegative(config.swipe.trail.intensity)
+  config.swipe.trail.startColor = clampColor(config.swipe.trail.startColor)
+  config.swipe.trail.midColor = clampColor(config.swipe.trail.midColor)
+  config.swipe.trail.endColor = clampColor(config.swipe.trail.endColor)
+  config.swipe.trail.midTime = clamp01(config.swipe.trail.midTime)
+  config.swipe.trail.alpha.start = clamp01(config.swipe.trail.alpha.start)
+  config.swipe.trail.alpha.mid = clamp01(config.swipe.trail.alpha.mid)
+  config.swipe.trail.alpha.end = clamp01(config.swipe.trail.alpha.end)
+  config.swipe.trail.alpha.midTime = clamp01(config.swipe.trail.alpha.midTime)
+  config.swipe.shards.enabled = Boolean(config.swipe.shards.enabled)
+  config.swipe.shards.emitPerDistance = clampNonNegative(config.swipe.shards.emitPerDistance)
+  config.swipe.shards.innerRadius = clampNonNegative(config.swipe.shards.innerRadius)
+  config.swipe.shards.outerRadius = clampNonNegative(config.swipe.shards.outerRadius)
+  if (config.swipe.shards.innerRadius > config.swipe.shards.outerRadius)
+  {
+    config.swipe.shards.outerRadius = config.swipe.shards.innerRadius
+  }
+  config.swipe.shards.speedMin = clampNonNegative(config.swipe.shards.speedMin)
+  config.swipe.shards.speedMax = clampNonNegative(config.swipe.shards.speedMax)
+  if (config.swipe.shards.speedMin > config.swipe.shards.speedMax)
+  {
+    config.swipe.shards.speedMax = config.swipe.shards.speedMin
+  }
+  config.swipe.shards.lifetimeMin = clampNonNegative(config.swipe.shards.lifetimeMin)
+  config.swipe.shards.lifetimeMax = clampNonNegative(config.swipe.shards.lifetimeMax)
+  if (config.swipe.shards.lifetimeMin > config.swipe.shards.lifetimeMax)
+  {
+    config.swipe.shards.lifetimeMax = config.swipe.shards.lifetimeMin
+  }
+  config.swipe.shards.sizeMin = clampNonNegative(config.swipe.shards.sizeMin)
+  config.swipe.shards.sizeMax = clampNonNegative(config.swipe.shards.sizeMax)
+  if (config.swipe.shards.sizeMin > config.swipe.shards.sizeMax)
+  {
+    config.swipe.shards.sizeMax = config.swipe.shards.sizeMin
+  }
+  config.swipe.shards.flashTimeWarpMin = clampNonNegative(config.swipe.shards.flashTimeWarpMin)
+  config.swipe.shards.flashTimeWarpMax = clampNonNegative(config.swipe.shards.flashTimeWarpMax)
+  if (config.swipe.shards.flashTimeWarpMin > config.swipe.shards.flashTimeWarpMax)
+  {
+    config.swipe.shards.flashTimeWarpMax = config.swipe.shards.flashTimeWarpMin
+  }
+  config.swipe.shards.tint = clampColor(config.swipe.shards.tint)
+  config.swipe.shards.peakBoost = clampNonNegative(config.swipe.shards.peakBoost)
+
   config.compositor.sharedScale.start = Math.max(0.0001, config.compositor.sharedScale.start)
   config.compositor.sharedScale.end = Math.max(0.0001, config.compositor.sharedScale.end)
   config.compositor.sharedScale.timeFraction = clamp01(config.compositor.sharedScale.timeFraction)
@@ -317,6 +432,7 @@ export const applyRuntimeConfigConstraints = (config: RuntimeConfig): RuntimeCon
   config.mixer.arcWeight = clampNonNegative(config.mixer.arcWeight)
   config.mixer.diskWeight = clampNonNegative(config.mixer.diskWeight)
   config.mixer.shardsWeight = clampNonNegative(config.mixer.shardsWeight)
+  config.mixer.trailWeight = clampNonNegative(config.mixer.trailWeight)
   config.mixer.gain = clampNonNegative(config.mixer.gain)
   if (!mixerModes.includes(config.mixer.mode))
   {

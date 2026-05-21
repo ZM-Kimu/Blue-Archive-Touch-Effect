@@ -22,5 +22,6 @@ export type {
   RuntimeConfigPatch,
   RuntimeConfig,
   ShardsConfig,
+  SwipeConfig,
   TonemappingMode,
 } from './types'

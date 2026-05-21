@@ -1,6 +1,6 @@
 import type { LayerPreviewMode } from 'blue-archive-touch-effect'
 
-export type PanelKey = 'arc' | 'disk' | 'shards' | 'compositor' | 'mixer' | 'postfx'
+export type PanelKey = 'arc' | 'disk' | 'shards' | 'swipe' | 'compositor' | 'mixer' | 'postfx'
 
 export type ConfigPath = string
 

@@ -11,6 +11,7 @@ Click
   -> Disk emitter
   -> Shared compositor (arc + disk only)
   -> Shards emitter
+  -> Swipe trail layer
   -> Final mixer
   -> PostFX
 ```
@@ -20,6 +21,7 @@ The vNext mental model is layer-based:
 - `arc`
 - `disk`
 - `shards`
+- `swipe`
 - `compositor`
 - `mixer`
 - `postfx`
@@ -32,6 +34,8 @@ The renderer preserves the previous visual rhythm at a high level:
 - arc follows the disk handoff timing
 - arc and disk share a compositor transform
 - shards stay outside the shared transform
+- swipe trail starts on the same press as click and builds on movement
+- swipe shard pairs emit by traveled distance, not time
 - postfx runs after the final mixed color result
 
 ## 3. Layer Responsibilities
@@ -103,6 +107,25 @@ shards.alpha
 shards.color
 ```
 
+### Swipe
+
+The swipe subsystem owns:
+
+- pointer-driven stroke capture
+- a dedicated ribbon trail layer inspired by Unity `TrailRenderer`
+- independent trail RGB and alpha gradients
+- distance-emitted shard pairs inspired by Unity `Ring (4)`
+- a swipe-specific pointer-centered shard ring radius independent from click-shard distribution
+
+Public config section:
+
+```text
+swipe.enabled
+swipe.input
+swipe.trail
+swipe.shards
+```
+
 ### Compositor
 
 The compositor does not perform early RGB color mixing.
@@ -130,6 +153,7 @@ FinalColor = mix(
   ArcColorAfterCompositor,
   DiskColorAfterCompositor,
   ShardsColor,
+  TrailColor,
   mixer
 )
 ```
@@ -140,6 +164,7 @@ Public config section:
 mixer.arcWeight
 mixer.diskWeight
 mixer.shardsWeight
+mixer.trailWeight
 mixer.mode
 mixer.gain
 ```
@@ -202,6 +227,7 @@ It uses layer-level preview/solo modes:
 - `arc`
 - `disk`
 - `shards`
+- `trail`
 - `postfxOff`
 
 `postfxOff` keeps the composite result but bypasses the post-process pass.
@@ -215,6 +241,7 @@ RuntimeConfig = {
   arc,
   disk,
   shards,
+  swipe,
   compositor,
   mixer,
   postfx,
