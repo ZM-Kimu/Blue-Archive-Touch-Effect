@@ -47,7 +47,7 @@ jobs:
       - name: Read package version
         id: package-version
         shell: bash
-        run: echo "value=$(node -p "require('./packages/click-fx/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(node -p "require('./packages/touch-effect/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Verify package version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: |
           PACKAGE_VERSION="${{ steps.package-version.outputs.value }}"
-          if ! grep -q "^## ${PACKAGE_VERSION}$" packages/click-fx/CHANGELOG.md; then
+          if ! grep -q "^## ${PACKAGE_VERSION}$" packages/touch-effect/CHANGELOG.md; then
             echo "Missing CHANGELOG entry for version ${PACKAGE_VERSION}."
             exit 1
           fi
@@ -86,18 +86,18 @@ jobs:
           echo "value=$DIST_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build package
-        run: npm run build -w packages/click-fx
+        run: npm run build -w packages/touch-effect
 
       - name: Pack package
-        run: npm pack -w packages/click-fx
+        run: npm pack -w packages/touch-effect
 
       - name: Publish to npm
         shell: bash
         run: |
           if [ "${{ github.event.repository.private }}" = "true" ]; then
-            npm publish -w packages/click-fx --tag "${{ steps.dist-tag.outputs.value }}"
+            npm publish -w packages/touch-effect --tag "${{ steps.dist-tag.outputs.value }}"
           else
-            npm publish -w packages/click-fx --tag "${{ steps.dist-tag.outputs.value }}" --provenance
+            npm publish -w packages/touch-effect --tag "${{ steps.dist-tag.outputs.value }}" --provenance
           fi
 
       - name: Extract release notes
@@ -109,7 +109,7 @@ jobs:
             $0 == "## " version { capture = 1; next }
             capture && /^## / { exit }
             capture { print }
-          ' packages/click-fx/CHANGELOG.md > RELEASE_NOTES.md
+          ' packages/touch-effect/CHANGELOG.md > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
             echo "Failed to extract release notes for version ${PACKAGE_VERSION}."
             exit 1
@@ -135,6 +135,6 @@ jobs:
       - name: Upload published tarball
         uses: actions/upload-artifact@v4
         with:
-          name: published-click-fx-package
+          name: published-touch-effect-package
           path: blue-archive-touch-effect-*.tgz
           if-no-files-found: error

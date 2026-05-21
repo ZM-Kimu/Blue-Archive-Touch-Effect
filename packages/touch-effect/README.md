@@ -1,6 +1,6 @@
 # blue-archive-touch-effect
 
-Attachable browser runtime for a Blue Archive-inspired click FX renderer.
+Attachable browser runtime for a Blue Archive-inspired TouchEffect renderer.
 
 ## Install
 
@@ -12,14 +12,14 @@ npm install blue-archive-touch-effect
 
 - Attaches to any container element
 - Adds a transparent overlay canvas with `pointer-events: none`
-- Spawns local click burst FX without taking over the full page
+- Triggers local click burst effects without taking over the full page
 - Adds a swipe trail ribbon plus distance-emitted swipe shards on drag
 - Exposes a small runtime API for spawning, config updates, resize, and cleanup
 
 ## Minimal Usage
 
 ```ts
-import { createClickFx } from 'blue-archive-touch-effect'
+import { createTouchEffect } from 'blue-archive-touch-effect'
 
 const target = document.querySelector('#fx-root')
 
@@ -27,7 +27,7 @@ if (!target) {
   throw new Error('Missing target element')
 }
 
-const fx = createClickFx({ target })
+const fx = createTouchEffect({ target })
 ```
 
 ## Layer Model
@@ -51,9 +51,9 @@ Swipe shards use their own pointer-centered ring radius and no longer inherit cl
 Pass nested semantic config at creation time and update it later by section.
 
 ```ts
-import { createClickFx } from 'blue-archive-touch-effect'
+import { createTouchEffect } from 'blue-archive-touch-effect'
 
-const fx = createClickFx({
+const fx = createTouchEffect({
   target: document.body,
   config: {
     arc: {
@@ -160,10 +160,9 @@ The renderer prefers an HDR offscreen path and falls back to an LDR approximatio
 
 ## API
 
-- `createClickFx({ target, config, listenTarget, pixelRatioCap, autoBindPointer })`
-- `spawnClickAtClient(x, y)`
-- `spawnClickAtLocal(x, y)`
-- `spawnAtClient(x, y)` / `spawnAtLocal(x, y)` legacy aliases for click spawning
+- `createTouchEffect({ target, config, listenTarget, pixelRatioCap, autoBindPointer })`
+- `triggerClickAtClient(x, y)`
+- `triggerClickAtLocal(x, y)`
 - `beginTrailAtClient(pointerId, x, y)`
 - `appendTrailAtClient(pointerId, x, y)`
 - `beginTrailAtLocal(pointerId, x, y)`
@@ -187,13 +186,13 @@ The renderer prefers an HDR offscreen path and falls back to an LDR approximatio
 Set `autoBindPointer: false` when your application owns the input lifecycle. Click bursts and trails can then be scheduled independently.
 
 ```ts
-const fx = createClickFx({
+const fx = createTouchEffect({
   target,
   autoBindPointer: false,
 })
 
 target.addEventListener('pointerdown', (event) => {
-  fx.spawnClickAtClient(event.clientX, event.clientY)
+  fx.triggerClickAtClient(event.clientX, event.clientY)
   fx.beginTrailAtClient(event.pointerId, event.clientX, event.clientY)
 })
 

@@ -5,7 +5,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
-const configPath = resolve(testDir, '../src/config.ts')
+const configPath = resolve(testDir, '../../src/config/index.ts')
 
 const readSource = (path) => readFile(path, 'utf8')
 

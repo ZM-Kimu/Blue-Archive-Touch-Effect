@@ -193,7 +193,7 @@ export type PostfxConfig = {
   }
 }
 
-export type RuntimeConfig = {
+export type TouchEffectConfig = {
   arc: ArcConfig
   disk: DiskConfig
   shards: ShardsConfig
@@ -207,9 +207,9 @@ export type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K]
 }
 
-export type RuntimeConfigPatch = DeepPartial<RuntimeConfig>
+export type TouchEffectConfigPatch = DeepPartial<TouchEffectConfig>
 
-export type RuntimeDebugState = {
+export type TouchEffectDebugState = {
   previewMode: LayerPreviewMode
 }
 
@@ -321,27 +321,25 @@ export type SwipeStore = {
   nextStrokeIndex: number
 }
 
-export type CreateClickFxOptions = {
+export type CreateTouchEffectOptions = {
   target: HTMLElement
   listenTarget?: HTMLElement | Window
-  config?: RuntimeConfigPatch
+  config?: TouchEffectConfigPatch
   pixelRatioCap?: number
   autoBindPointer?: boolean
 }
 
-export type ClickFxInstance = {
+export type TouchEffectInstance = {
   canvas: HTMLCanvasElement
-  spawnAtClient: (clientX: number, clientY: number) => void
-  spawnAtLocal: (x: number, y: number) => void
-  spawnClickAtClient: (clientX: number, clientY: number) => void
-  spawnClickAtLocal: (x: number, y: number) => void
+  triggerClickAtClient: (clientX: number, clientY: number) => void
+  triggerClickAtLocal: (x: number, y: number) => void
   beginTrailAtClient: (pointerId: number, clientX: number, clientY: number) => void
   appendTrailAtClient: (pointerId: number, clientX: number, clientY: number) => boolean
   beginTrailAtLocal: (pointerId: number, x: number, y: number) => void
   appendTrailAtLocal: (pointerId: number, x: number, y: number) => boolean
   endTrail: (pointerId: number) => void
   endAllTrails: () => void
-  updateConfig: (partial: RuntimeConfigPatch) => void
+  updateConfig: (partial: TouchEffectConfigPatch) => void
   resize: () => void
   dispose: () => void
 }

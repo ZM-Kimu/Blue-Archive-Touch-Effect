@@ -6,26 +6,27 @@ import {
   MAX_SWIPE_STROKES,
   PARTICLES_PER_BURST,
   SWIPE_SHARD_PARTICLES_PER_STROKE,
-} from './constants'
+} from '../core/constants'
 import {
   easeInOutSine,
   easeInQuad,
   randomBetween,
   randomIntInclusive,
   randomSigned,
-} from './math'
+} from '../core/math'
+import { createBounds } from './bounds'
 import type {
   BurstBounds,
   BurstState,
   BurstStore,
   FragmentParticleState,
   ParticleState,
-  RuntimeConfig,
+  TouchEffectConfig,
   SwipePointState,
   SwipeShardParticleState,
   SwipeStore,
   SwipeStrokeState,
-} from './types'
+} from '../types'
 
 const createParticleState = (): ParticleState => ({
   startTime: -100,
@@ -116,13 +117,6 @@ const createSwipeStrokeState = (): SwipeStrokeState => ({
   bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
   points: Array.from({ length: MAX_SWIPE_POINTS_PER_STROKE }, createSwipePointState),
   shardParticles: Array.from({ length: SWIPE_SHARD_PARTICLES_PER_STROKE }, createSwipeShardParticleState),
-})
-
-const createBounds = (minX = 0, maxX = 0, minY = 0, maxY = 0): BurstBounds => ({
-  minX,
-  maxX,
-  minY,
-  maxY,
 })
 
 const resetParticle = (particle: ParticleState) =>
@@ -388,7 +382,7 @@ const appendSwipePointState = (
 
 const emitSwipeShardPair = (
   stroke: SwipeStrokeState,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   currentTime: number,
   emissionX: number,
   emissionY: number
@@ -438,7 +432,7 @@ export const createSwipeStore = (): SwipeStore => ({
 
 export const spawnBurst = (
   store: BurstStore,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   currentTime: number,
   clientX: number,
   clientY: number,
@@ -608,7 +602,7 @@ export const updateBurstActivity = (store: BurstStore, time: number) =>
 
 export const beginSwipeStroke = (
   store: SwipeStore,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   currentTime: number,
   pointerId: number,
   clientX: number,
@@ -638,7 +632,7 @@ export const beginSwipeStroke = (
 
 export const appendSwipeStrokePoint = (
   store: SwipeStore,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   currentTime: number,
   pointerId: number,
   clientX: number,
@@ -800,7 +794,7 @@ export const updateSwipeActivity = (store: SwipeStore, time: number) =>
 export const hasActiveBursts = (store: BurstStore) => store.bursts.some((burst) => burst.active > 0)
 export const hasActiveSwipeContent = (store: SwipeStore) => store.strokes.some((stroke) => stroke.active > 0)
 
-export const getBurstCompositeBounds = (burst: BurstState, config: RuntimeConfig): BurstBounds =>
+export const getBurstCompositeBounds = (burst: BurstState, config: TouchEffectConfig): BurstBounds =>
 {
   const compositeScaleMax = Math.max(
     config.compositor.sharedScale.start,
@@ -817,7 +811,7 @@ export const getBurstCompositeBounds = (burst: BurstState, config: RuntimeConfig
   return createBounds(-radius, radius, -radius, radius)
 }
 
-export const getBurstShardsBounds = (burst: BurstState, config: RuntimeConfig): BurstBounds =>
+export const getBurstShardsBounds = (burst: BurstState, config: TouchEffectConfig): BurstBounds =>
 {
   let maxSpeed = 0
   let maxSizeMultiplier = 0
@@ -849,7 +843,7 @@ export const getBurstShardsBounds = (burst: BurstState, config: RuntimeConfig): 
   return createBounds(-radius, radius, -radius, radius)
 }
 
-export const getSwipeShardsBounds = (stroke: SwipeStrokeState, config: RuntimeConfig): BurstBounds =>
+export const getSwipeShardsBounds = (stroke: SwipeStrokeState, config: TouchEffectConfig): BurstBounds =>
 {
   if (stroke.pointCount <= 0)
   {
@@ -889,31 +883,4 @@ export const getSwipeShardsBounds = (stroke: SwipeStrokeState, config: RuntimeCo
   )
 }
 
-export const unionBurstBounds = (...boundsList: BurstBounds[]): BurstBounds =>
-{
-  const validBounds = boundsList.filter((bounds) =>
-    Number.isFinite(bounds.minX)
-    && Number.isFinite(bounds.maxX)
-    && Number.isFinite(bounds.minY)
-    && Number.isFinite(bounds.maxY)
-  )
-
-  if (!validBounds.length)
-  {
-    return createBounds()
-  }
-
-  return createBounds(
-    Math.min(...validBounds.map((bounds) => bounds.minX)),
-    Math.max(...validBounds.map((bounds) => bounds.maxX)),
-    Math.min(...validBounds.map((bounds) => bounds.minY)),
-    Math.max(...validBounds.map((bounds) => bounds.maxY))
-  )
-}
-
-export const expandBurstBounds = (bounds: BurstBounds, padding: number): BurstBounds => createBounds(
-  bounds.minX - padding,
-  bounds.maxX + padding,
-  bounds.minY - padding,
-  bounds.maxY + padding
-)
+export { expandBurstBounds, unionBurstBounds } from './bounds'

@@ -5,8 +5,8 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
-const runtimePath = resolve(testDir, '../src/runtime.ts')
-const typesPath = resolve(testDir, '../src/types.ts')
+const runtimePath = resolve(testDir, '../../src/runtime/index.ts')
+const typesPath = resolve(testDir, '../../src/types/index.ts')
 
 const readSource = (path) => readFile(path, 'utf8')
 
@@ -21,12 +21,12 @@ const sliceBlock = (source, startMarker, endMarker) => {
 test('public instance exposes explicit click and trail trigger APIs', async () => {
   const typesSource = await readSource(typesPath)
   const runtimeSource = await readSource(runtimePath)
-  const instanceTypeBlock = sliceBlock(typesSource, 'export type ClickFxInstance', '\n}')
-  const runtimeHelpersBlock = sliceBlock(runtimeSource, '  const spawnAtLocal', '  const beginSwipeFromPointer')
-  const instanceBlock = sliceBlock(runtimeSource, '  const instance: InternalClickFxInstance = {', '  return instance')
+  const instanceTypeBlock = sliceBlock(typesSource, 'export type TouchEffectInstance', '\n}')
+  const runtimeHelpersBlock = sliceBlock(runtimeSource, '  const triggerClickAtLocal', '  const beginSwipeFromPointer')
+  const instanceBlock = sliceBlock(runtimeSource, '  const instance: InternalTouchEffectInstance = {', '  return instance')
 
-  assert.match(instanceTypeBlock, /spawnClickAtClient: \(clientX: number, clientY: number\) => void/)
-  assert.match(instanceTypeBlock, /spawnClickAtLocal: \(x: number, y: number\) => void/)
+  assert.match(instanceTypeBlock, /triggerClickAtClient: \(clientX: number, clientY: number\) => void/)
+  assert.match(instanceTypeBlock, /triggerClickAtLocal: \(x: number, y: number\) => void/)
   assert.match(instanceTypeBlock, /beginTrailAtClient: \(pointerId: number, clientX: number, clientY: number\) => void/)
   assert.match(instanceTypeBlock, /appendTrailAtClient: \(pointerId: number, clientX: number, clientY: number\) => boolean/)
   assert.match(instanceTypeBlock, /beginTrailAtLocal: \(pointerId: number, x: number, y: number\) => void/)
@@ -34,8 +34,6 @@ test('public instance exposes explicit click and trail trigger APIs', async () =
   assert.match(instanceTypeBlock, /endTrail: \(pointerId: number\) => void/)
   assert.match(instanceTypeBlock, /endAllTrails: \(\) => void/)
 
-  assert.match(runtimeHelpersBlock, /const spawnClickAtClient = spawnAtClient/)
-  assert.match(runtimeHelpersBlock, /const spawnClickAtLocal = spawnAtLocal/)
   assert.match(runtimeHelpersBlock, /const beginTrailAtClient = \(pointerId: number, clientX: number, clientY: number, timeSeconds\?: number\) =>/)
   assert.match(runtimeHelpersBlock, /const appendTrailAtClient = \(pointerId: number, clientX: number, clientY: number, timeSeconds\?: number\) =>/)
   assert.match(runtimeHelpersBlock, /const beginTrailAtLocal = \(pointerId: number, x: number, y: number, timeSeconds\?: number\) =>/)
@@ -47,14 +45,17 @@ test('public instance exposes explicit click and trail trigger APIs', async () =
   assert.match(runtimeHelpersBlock, /endSwipeStroke\(swipeStore, pointerId\)/)
   assert.match(runtimeHelpersBlock, /endAllSwipeStrokes\(swipeStore\)/)
 
-  assert.match(instanceBlock, /spawnClickAtClient,/)
-  assert.match(instanceBlock, /spawnClickAtLocal,/)
+  assert.match(instanceBlock, /triggerClickAtClient,/)
+  assert.match(instanceBlock, /triggerClickAtLocal,/)
   assert.match(instanceBlock, /beginTrailAtClient,/)
   assert.match(instanceBlock, /appendTrailAtClient,/)
   assert.match(instanceBlock, /beginTrailAtLocal,/)
   assert.match(instanceBlock, /appendTrailAtLocal,/)
   assert.match(instanceBlock, /endTrail,/)
   assert.match(instanceBlock, /endAllTrails,/)
+
+  assert.doesNotMatch(typesSource, /spawnAtClient|spawnAtLocal|spawnClickAtClient|spawnClickAtLocal/)
+  assert.doesNotMatch(runtimeSource, /spawnAtClient|spawnAtLocal|spawnClickAtClient|spawnClickAtLocal/)
 })
 
 test('automatic pointer handlers use the public trail lifecycle helpers', async () => {

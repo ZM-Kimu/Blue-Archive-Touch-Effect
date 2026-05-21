@@ -1,13 +1,13 @@
 import {
   bloomDownscaleModes,
-  createRuntimeConfig,
+  createTouchEffectConfig,
   layerPreviewModes,
   mixerModes,
   tonemappingModes,
   type BloomDownscaleMode,
   type LayerPreviewMode,
   type MixerMode,
-  type RuntimeConfig,
+  type TouchEffectConfig,
   type TonemappingMode,
 } from 'blue-archive-touch-effect'
 import type {
@@ -18,7 +18,7 @@ import type {
   SelectControlDefinition,
 } from './types'
 
-export const defaultConfig: RuntimeConfig = createRuntimeConfig()
+export const defaultConfig: TouchEffectConfig = createTouchEffectConfig()
 
 export const panelDefinitions: PanelDefinition[] = [
   { key: 'arc', title: 'Arc', subtitle: 'Arc emitter and warp' },

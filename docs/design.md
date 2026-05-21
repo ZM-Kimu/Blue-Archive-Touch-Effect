@@ -237,7 +237,7 @@ It uses layer-level preview/solo modes:
 The public runtime config is nested and semantic:
 
 ```text
-RuntimeConfig = {
+TouchEffectConfig = {
   arc,
   disk,
   shards,

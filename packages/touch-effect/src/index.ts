@@ -1,26 +1,26 @@
 export {
-  applyRuntimeConfigConstraints,
-  cloneRuntimeConfig,
-  createRuntimeConfig,
-  defaultRuntimeConfig,
-  mergeRuntimeConfig,
+  applyTouchEffectConfigConstraints,
+  cloneTouchEffectConfig,
+  createTouchEffectConfig,
+  defaultTouchEffectConfig,
+  mergeTouchEffectConfig,
 } from './config'
-export { createClickFx } from './runtime'
+export { createTouchEffect } from './runtime'
 export { bloomDownscaleModes, layerPreviewModes, mixerModes, tonemappingModes } from './types'
 export type {
   ArcConfig,
   BloomDownscaleMode,
-  ClickFxInstance,
+  TouchEffectInstance,
   ColorRgb,
   CompositorConfig,
-  CreateClickFxOptions,
+  CreateTouchEffectOptions,
   DiskConfig,
   LayerPreviewMode,
   MixerConfig,
   MixerMode,
   PostfxConfig,
-  RuntimeConfigPatch,
-  RuntimeConfig,
+  TouchEffectConfigPatch,
+  TouchEffectConfig,
   ShardsConfig,
   SwipeConfig,
   TonemappingMode,

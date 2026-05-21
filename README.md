@@ -6,7 +6,7 @@
 
 <br />
 
-<img src="./assets/cursor-demo.gif" alt="Cursor touch effect demo" width="720" />
+<img src="./docs/assets/cursor-demo.gif" alt="Cursor touch effect demo" width="720" />
 
 Just a simple shader effect for Web Canvas.
 
@@ -36,7 +36,7 @@ npm install blue-archive-touch-effect
 ```
 
 ```ts
-import { createClickFx } from 'blue-archive-touch-effect'
+import { createTouchEffect } from 'blue-archive-touch-effect'
 
 const target = document.querySelector<HTMLElement>('#fx-root')
 
@@ -44,7 +44,7 @@ if (!target) {
   throw new Error('Missing target element')
 }
 
-const fx = createClickFx({ target })
+const fx = createTouchEffect({ target })
 ```
 
 The runtime appends an overlay canvas to `target`. If the target is statically positioned, the runtime temporarily sets it to `position: relative` and restores it on `dispose()`.
@@ -52,7 +52,7 @@ The runtime appends an overlay canvas to `target`. If the target is statically p
 ## Runtime API
 
 ```ts
-const fx = createClickFx({
+const fx = createTouchEffect({
   target,
   listenTarget,
   config,
@@ -60,10 +60,8 @@ const fx = createClickFx({
   autoBindPointer,
 })
 
-fx.spawnAtClient(clientX, clientY)
-fx.spawnAtLocal(x, y)
-fx.spawnClickAtClient(clientX, clientY)
-fx.spawnClickAtLocal(x, y)
+fx.triggerClickAtClient(clientX, clientY)
+fx.triggerClickAtLocal(x, y)
 fx.beginTrailAtClient(pointerId, clientX, clientY)
 fx.appendTrailAtClient(pointerId, clientX, clientY)
 fx.beginTrailAtLocal(pointerId, x, y)
@@ -88,13 +86,13 @@ fx.dispose()
 By default, the runtime owns pointer input. Set `autoBindPointer: false` if your app wants to decide exactly when click bursts or trails begin, move, and end.
 
 ```ts
-const fx = createClickFx({
+const fx = createTouchEffect({
   target,
   autoBindPointer: false,
 })
 
 target.addEventListener('pointerdown', (event) => {
-  fx.spawnClickAtClient(event.clientX, event.clientY)
+  fx.triggerClickAtClient(event.clientX, event.clientY)
   fx.beginTrailAtClient(event.pointerId, event.clientX, event.clientY)
 })
 

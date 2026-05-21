@@ -1,13 +1,13 @@
 import type {
   ColorRgb,
-  RuntimeConfig,
-  RuntimeConfigPatch,
-} from './types'
+  TouchEffectConfig,
+  TouchEffectConfigPatch,
+} from '../types'
 import
 {
   mixerModes,
   tonemappingModes,
-} from './types'
+} from '../types'
 
 const cloneColor = (color: ColorRgb): ColorRgb => ({ ...color })
 
@@ -63,7 +63,7 @@ const clampColor = (color: ColorRgb) => ({
   b: clamp01(color.b),
 })
 
-export const defaultRuntimeConfig: RuntimeConfig = {
+export const defaultTouchEffectConfig: TouchEffectConfig = {
   arc: {
     source: {
       radius: 0.1,
@@ -266,7 +266,7 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   },
 }
 
-export const cloneRuntimeConfig = (config: RuntimeConfig = defaultRuntimeConfig): RuntimeConfig =>
+export const cloneTouchEffectConfig = (config: TouchEffectConfig = defaultTouchEffectConfig): TouchEffectConfig =>
 {
   const clone = deepClone(config)
   clone.arc.color = cloneColor(clone.arc.color)
@@ -280,7 +280,7 @@ export const cloneRuntimeConfig = (config: RuntimeConfig = defaultRuntimeConfig)
   return clone
 }
 
-export const applyRuntimeConfigConstraints = (config: RuntimeConfig): RuntimeConfig =>
+export const applyTouchEffectConfigConstraints = (config: TouchEffectConfig): TouchEffectConfig =>
 {
   config.arc.source.radius = clampNonNegative(config.arc.source.radius)
   config.arc.source.scaleX = Math.max(0.0001, config.arc.source.scaleX)
@@ -462,21 +462,21 @@ export const applyRuntimeConfigConstraints = (config: RuntimeConfig): RuntimeCon
   return config
 }
 
-export const mergeRuntimeConfig = (
-  target: RuntimeConfig,
-  patch: RuntimeConfigPatch
-): RuntimeConfig =>
+export const mergeTouchEffectConfig = (
+  target: TouchEffectConfig,
+  patch: TouchEffectConfigPatch
+): TouchEffectConfig =>
 {
   mergeObjects(target as unknown as Record<string, unknown>, patch as Record<string, unknown>)
-  return applyRuntimeConfigConstraints(target)
+  return applyTouchEffectConfigConstraints(target)
 }
 
-export const createRuntimeConfig = (patch?: RuntimeConfigPatch): RuntimeConfig =>
+export const createTouchEffectConfig = (patch?: TouchEffectConfigPatch): TouchEffectConfig =>
 {
-  const config = cloneRuntimeConfig(defaultRuntimeConfig)
+  const config = cloneTouchEffectConfig(defaultTouchEffectConfig)
   if (patch)
   {
-    mergeRuntimeConfig(config, patch)
+    mergeTouchEffectConfig(config, patch)
   }
-  return applyRuntimeConfigConstraints(config)
+  return applyTouchEffectConfigConstraints(config)
 }

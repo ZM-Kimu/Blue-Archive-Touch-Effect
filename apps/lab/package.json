@@ -9,6 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "blue-archive-touch-effect": "file:../../packages/click-fx"
+    "blue-archive-touch-effect": "file:../../packages/touch-effect"
   }
 }

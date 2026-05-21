@@ -6,7 +6,7 @@
 
 <br />
 
-<img src="./assets/cursor-demo.gif" alt="光标触控效果展示" width="720" />
+<img src="./docs/assets/cursor-demo.gif" alt="光标触控效果展示" width="720" />
 
 只是一个简单的 shader 效果，适用于 Web Canvas。
 
@@ -36,7 +36,7 @@ npm install blue-archive-touch-effect
 ```
 
 ```ts
-import { createClickFx } from 'blue-archive-touch-effect'
+import { createTouchEffect } from 'blue-archive-touch-effect'
 
 const target = document.querySelector<HTMLElement>('#fx-root')
 
@@ -44,7 +44,7 @@ if (!target) {
   throw new Error('Missing target element')
 }
 
-const fx = createClickFx({ target })
+const fx = createTouchEffect({ target })
 ```
 
 运行时会向 `target` 添加覆盖画布。如果目标元素是静态定位，运行时会临时设置为 `position: relative`，并在 `dispose()` 时恢复。
@@ -52,7 +52,7 @@ const fx = createClickFx({ target })
 ## 运行时 API
 
 ```ts
-const fx = createClickFx({
+const fx = createTouchEffect({
   target,
   listenTarget,
   config,
@@ -60,10 +60,8 @@ const fx = createClickFx({
   autoBindPointer,
 })
 
-fx.spawnAtClient(clientX, clientY)
-fx.spawnAtLocal(x, y)
-fx.spawnClickAtClient(clientX, clientY)
-fx.spawnClickAtLocal(x, y)
+fx.triggerClickAtClient(clientX, clientY)
+fx.triggerClickAtLocal(x, y)
 fx.beginTrailAtClient(pointerId, clientX, clientY)
 fx.appendTrailAtClient(pointerId, clientX, clientY)
 fx.beginTrailAtLocal(pointerId, x, y)
@@ -88,13 +86,13 @@ fx.dispose()
 默认运行时会接管 pointer 输入。如果应用希望自己决定 click burst 或 trail 的开始、移动和结束时机，可以设置 `autoBindPointer: false`。
 
 ```ts
-const fx = createClickFx({
+const fx = createTouchEffect({
   target,
   autoBindPointer: false,
 })
 
 target.addEventListener('pointerdown', (event) => {
-  fx.spawnClickAtClient(event.clientX, event.clientY)
+  fx.triggerClickAtClient(event.clientX, event.clientY)
   fx.beginTrailAtClient(event.pointerId, event.clientX, event.clientY)
 })
 

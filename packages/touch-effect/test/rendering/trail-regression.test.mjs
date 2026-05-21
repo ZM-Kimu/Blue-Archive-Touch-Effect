@@ -5,12 +5,13 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
-const runtimePath = resolve(testDir, '../src/runtime.ts')
-const typesPath = resolve(testDir, '../src/types.ts')
-const configPath = resolve(testDir, '../src/config.ts')
-const statePath = resolve(testDir, '../src/state.ts')
-const shaderPath = resolve(testDir, '../src/shaders/swipe-trail.frag')
-const labConfigPath = resolve(testDir, '../../../apps/lab/src/lab-config.ts')
+const runtimePath = resolve(testDir, '../../src/runtime/index.ts')
+const typesPath = resolve(testDir, '../../src/types/index.ts')
+const configPath = resolve(testDir, '../../src/config/index.ts')
+const statePath = resolve(testDir, '../../src/state/index.ts')
+const shaderPath = resolve(testDir, '../../src/rendering/shaders/swipe-trail.frag')
+const trailRendererPath = resolve(testDir, '../../src/rendering/trail.ts')
+const labConfigPath = resolve(testDir, '../../../../apps/lab/src/config/defaults.ts')
 
 const readSource = (path) => readFile(path, 'utf8')
 
@@ -23,7 +24,7 @@ const sliceBlock = (source, startMarker, endMarker) => {
 }
 
 test('trail polyline explicitly uses premultiplied-alpha blending', async () => {
-  const source = await readSource(runtimePath)
+  const source = await readSource(trailRendererPath)
   const createTrailPolylineBlock = sliceBlock(source, 'const createTrailPolyline', 'const updateTrailPolyline')
 
   assert.match(
@@ -57,15 +58,15 @@ test('trail shader uses alpha gradient instead of hardcoded age fade', async () 
 })
 
 test('runtime and lab expose trail alpha controls', async () => {
-  const runtimeSource = await readSource(runtimePath)
+  const trailRendererSource = await readSource(trailRendererPath)
   const labConfigSource = await readSource(labConfigPath)
 
-  assert.match(runtimeSource, /uTrailAlphaParams:\s*\{\s*value:\s*\[1,\s*1,\s*0,\s*0\.6\]\s*\}/)
-  assert.match(runtimeSource, /polyline\.program\.uniforms\.uTrailAlphaParams\.value = \[/)
-  assert.match(runtimeSource, /config\.swipe\.trail\.alpha\.start/)
-  assert.match(runtimeSource, /config\.swipe\.trail\.alpha\.mid/)
-  assert.match(runtimeSource, /config\.swipe\.trail\.alpha\.end/)
-  assert.match(runtimeSource, /config\.swipe\.trail\.alpha\.midTime/)
+  assert.match(trailRendererSource, /uTrailAlphaParams:\s*\{\s*value:\s*\[1,\s*1,\s*0,\s*0\.6\]\s*\}/)
+  assert.match(trailRendererSource, /polyline\.program\.uniforms\.uTrailAlphaParams\.value = \[/)
+  assert.match(trailRendererSource, /config\.swipe\.trail\.alpha\.start/)
+  assert.match(trailRendererSource, /config\.swipe\.trail\.alpha\.mid/)
+  assert.match(trailRendererSource, /config\.swipe\.trail\.alpha\.end/)
+  assert.match(trailRendererSource, /config\.swipe\.trail\.alpha\.midTime/)
 
   assert.match(labConfigSource, /path: 'swipe\.trail\.alpha\.start', label: 'Alpha Start'/)
   assert.match(labConfigSource, /path: 'swipe\.trail\.alpha\.mid', label: 'Alpha Mid'/)

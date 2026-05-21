@@ -1,9 +1,9 @@
-import { Mesh, Polyline, Program, RenderTarget, Renderer, Triangle, Vec3 } from 'ogl'
+import { Mesh, Program, RenderTarget, Renderer, Triangle } from 'ogl'
 import {
-  createRuntimeConfig,
-  mergeRuntimeConfig,
-} from './config'
-import { MAX_SWIPE_POINTS_PER_STROKE } from './constants'
+  createTouchEffectConfig,
+  mergeTouchEffectConfig,
+} from '../config'
+import { MAX_SWIPE_POINTS_PER_STROKE } from '../core/constants'
 import {
   appendSwipeStrokePoint,
   beginSwipeStroke,
@@ -21,26 +21,25 @@ import {
   unionBurstBounds,
   updateBurstActivity,
   updateSwipeActivity,
-} from './state'
-import burstFilterFragment from './shaders/burst-filter.frag'
-import burstSceneFragment from './shaders/burst-scene.frag'
-import finalMixerFragment from './shaders/final-mixer.frag'
-import bloomDownsampleFragment from './shaders/postfx-bloom-downsample.frag'
-import bloomPrefilterFragment from './shaders/postfx-bloom-prefilter.frag'
-import bloomUpsampleFragment from './shaders/postfx-bloom-upsample.frag'
-import swipeTrailFragment from './shaders/swipe-trail.frag'
-import swipeTrailVertex from './shaders/swipe-trail.vert'
-import vertex from './shaders/click-fx.vert'
+} from '../state'
+import burstFilterFragment from '../rendering/shaders/burst-filter.frag'
+import burstSceneFragment from '../rendering/shaders/burst-scene.frag'
+import finalMixerFragment from '../rendering/shaders/final-mixer.frag'
+import bloomDownsampleFragment from '../rendering/shaders/postfx-bloom-downsample.frag'
+import bloomPrefilterFragment from '../rendering/shaders/postfx-bloom-prefilter.frag'
+import bloomUpsampleFragment from '../rendering/shaders/postfx-bloom-upsample.frag'
+import vertex from '../rendering/shaders/touch-effect.vert'
+import { createTrailPolyline, updateTrailPolyline } from '../rendering/trail'
 import type {
   BurstBounds,
   BurstState,
-  ClickFxInstance,
-  CreateClickFxOptions,
-  RuntimeConfig,
-  RuntimeConfigPatch,
-  RuntimeDebugState,
+  TouchEffectInstance,
+  CreateTouchEffectOptions,
+  TouchEffectConfig,
+  TouchEffectConfigPatch,
+  TouchEffectDebugState,
   SwipeStrokeState,
-} from './types'
+} from '../types'
 
 type UniformBag = Record<string, { value: any }>
 
@@ -64,11 +63,11 @@ type RenderRect = {
   deviceHeight: number
 }
 
-type InternalClickFxInstance = ClickFxInstance & {
-  setDebugState: (partial: Partial<RuntimeDebugState>) => void
+type InternalTouchEffectInstance = TouchEffectInstance & {
+  setDebugState: (partial: Partial<TouchEffectDebugState>) => void
 }
 
-const defaultRuntimeDebugState = (): RuntimeDebugState => ({
+const defaultTouchEffectDebugState = (): TouchEffectDebugState => ({
   previewMode: 'composite',
 })
 
@@ -100,13 +99,13 @@ const setRendererViewport = (
   renderer.state.viewport.height = height
 }
 
-const getMixerModeValue = (mode: RuntimeConfig['mixer']['mode']) =>
+const getMixerModeValue = (mode: TouchEffectConfig['mixer']['mode']) =>
   mode === 'add' ? 0 : mode === 'screen' ? 1 : 2
 
-const getTonemappingModeValue = (mode: RuntimeConfig['postfx']['tonemapping']['mode']) =>
+const getTonemappingModeValue = (mode: TouchEffectConfig['postfx']['tonemapping']['mode']) =>
   mode === 'none' ? 0 : mode === 'neutral' ? 1 : 2
 
-const getScenePreviewModeValue = (mode: RuntimeDebugState['previewMode']) =>
+const getScenePreviewModeValue = (mode: TouchEffectDebugState['previewMode']) =>
   mode === 'arc'
     ? 1
     : mode === 'disk'
@@ -115,7 +114,7 @@ const getScenePreviewModeValue = (mode: RuntimeDebugState['previewMode']) =>
         ? 3
         : 0
 
-const getFinalPreviewModeValue = (mode: RuntimeDebugState['previewMode']) =>
+const getFinalPreviewModeValue = (mode: TouchEffectDebugState['previewMode']) =>
   mode === 'trail'
     ? 2
     : mode === 'arc' || mode === 'disk' || mode === 'shards'
@@ -128,7 +127,7 @@ const gammaToLinear = (value: number) =>
 const getBloomScatterValue = (scatter: number) =>
   0.05 + 0.9 * Math.min(1, Math.max(0, scatter))
 
-const getBloomDownscaleFactor = (downscale: RuntimeConfig['postfx']['bloom']['downscale']) =>
+const getBloomDownscaleFactor = (downscale: TouchEffectConfig['postfx']['bloom']['downscale']) =>
   downscale === 'quarter' ? 4 : 2
 
 const detectHdrTargetSupport = (gl: WebGLRenderingContext | WebGL2RenderingContext): HdrTargetSupport =>
@@ -203,7 +202,7 @@ const clearBoundTarget = (gl: WebGLRenderingContext | WebGL2RenderingContext) =>
   gl.clear(gl.COLOR_BUFFER_BIT)
 }
 
-const getFilterPaddingCss = (config: RuntimeConfig) =>
+const getFilterPaddingCss = (config: TouchEffectConfig) =>
 {
   if (!config.postfx.enabled || !config.postfx.bloom.enabled)
   {
@@ -267,8 +266,8 @@ const getLocalRenderRect = (
 
 const getBurstRenderRect = (
   burst: BurstState,
-  config: RuntimeConfig,
-  debugState: RuntimeDebugState,
+  config: TouchEffectConfig,
+  debugState: TouchEffectDebugState,
   runtimeState: RuntimeState
 ) =>
 {
@@ -291,7 +290,7 @@ const getBurstRenderRect = (
 
 const getSwipeShardsRenderRect = (
   stroke: SwipeStrokeState,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   runtimeState: RuntimeState
 ) =>
   getLocalRenderRect(
@@ -302,7 +301,7 @@ const getSwipeShardsRenderRect = (
     runtimeState
   )
 
-const createSceneUniforms = (config: RuntimeConfig): UniformBag => ({
+const createSceneUniforms = (config: TouchEffectConfig): UniformBag => ({
   uTime: { value: 0 },
   uLocalBounds: { value: [-1, 1, -1, 1] },
   uBurstTiming: { value: [0, 0, 0, 0] },
@@ -413,14 +412,14 @@ const createSceneUniforms = (config: RuntimeConfig): UniformBag => ({
   uFragmentParticleC9: { value: [0, 0, 1, 0.1] },
 })
 
-const createFinalMixerUniforms = (config: RuntimeConfig, debugState: RuntimeDebugState): UniformBag => ({
+const createFinalMixerUniforms = (config: TouchEffectConfig, debugState: TouchEffectDebugState): UniformBag => ({
   uSceneTexture: { value: null },
   uTrailTexture: { value: null },
   uFinalMixerParams: { value: [config.mixer.trailWeight, getMixerModeValue(config.mixer.mode), 0, 0] },
   uFinalPreviewMode: { value: getFinalPreviewModeValue(debugState.previewMode) },
 })
 
-const createBloomPrefilterUniforms = (config: RuntimeConfig): UniformBag => ({
+const createBloomPrefilterUniforms = (config: TouchEffectConfig): UniformBag => ({
   uSourceTexture: { value: null },
   uSourceTexel: { value: [1, 1] },
   uBloomThresholdData: {
@@ -433,13 +432,13 @@ const createBloomPrefilterUniforms = (config: RuntimeConfig): UniformBag => ({
   },
 })
 
-const createBloomDownsampleUniforms = (config: RuntimeConfig): UniformBag => ({
+const createBloomDownsampleUniforms = (config: TouchEffectConfig): UniformBag => ({
   uSourceTexture: { value: null },
   uSourceTexel: { value: [1, 1] },
   uBloomSampleParams: { value: [config.postfx.bloom.highQualityFiltering ? 1 : 0, 0, 0, 0] },
 })
 
-const createBloomUpsampleUniforms = (config: RuntimeConfig): UniformBag => ({
+const createBloomUpsampleUniforms = (config: TouchEffectConfig): UniformBag => ({
   uHighTexture: { value: null },
   uLowTexture: { value: null },
   uLowTexel: { value: [1, 1] },
@@ -448,7 +447,7 @@ const createBloomUpsampleUniforms = (config: RuntimeConfig): UniformBag => ({
   },
 })
 
-const createUberUniforms = (config: RuntimeConfig): UniformBag => ({
+const createUberUniforms = (config: TouchEffectConfig): UniformBag => ({
   uSceneTexture: { value: null },
   uBloomTexture: { value: null },
   uPostfxParams: {
@@ -469,8 +468,8 @@ const createUberUniforms = (config: RuntimeConfig): UniformBag => ({
 
 const syncSceneStaticUniforms = (
   uniforms: ReturnType<typeof createSceneUniforms>,
-  config: RuntimeConfig,
-  previewMode: RuntimeDebugState['previewMode']
+  config: TouchEffectConfig,
+  previewMode: TouchEffectDebugState['previewMode']
 ) =>
 {
   uniforms.uDiskShapeData.value = [config.disk.shape.radius, config.disk.shape.softness, 0, 0]
@@ -528,8 +527,8 @@ const syncSceneStaticUniforms = (
 
 const syncFinalMixerUniforms = (
   uniforms: ReturnType<typeof createFinalMixerUniforms>,
-  config: RuntimeConfig,
-  debugState: RuntimeDebugState,
+  config: TouchEffectConfig,
+  debugState: TouchEffectDebugState,
   sceneTexture: any,
   trailTexture: any
 ) =>
@@ -542,7 +541,7 @@ const syncFinalMixerUniforms = (
 
 const syncBloomPrefilterUniforms = (
   uniforms: ReturnType<typeof createBloomPrefilterUniforms>,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   texture: any,
   texelX: number,
   texelY: number
@@ -561,7 +560,7 @@ const syncBloomPrefilterUniforms = (
 
 const syncBloomDownsampleUniforms = (
   uniforms: ReturnType<typeof createBloomDownsampleUniforms>,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   texture: any,
   texelX: number,
   texelY: number
@@ -574,7 +573,7 @@ const syncBloomDownsampleUniforms = (
 
 const syncBloomUpsampleUniforms = (
   uniforms: ReturnType<typeof createBloomUpsampleUniforms>,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   highTexture: any,
   lowTexture: any,
   lowTexelX: number,
@@ -594,7 +593,7 @@ const syncBloomUpsampleUniforms = (
 
 const syncUberUniforms = (
   uniforms: ReturnType<typeof createUberUniforms>,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   postfxEnabled: boolean,
   bloomTexture: any,
   sceneTexture: any
@@ -730,7 +729,7 @@ const syncSwipeShardBatchUniforms = (
   stroke: SwipeStrokeState,
   rect: RenderRect,
   time: number,
-  config: RuntimeConfig,
+  config: TouchEffectConfig,
   particleIndices: number[]
 ) =>
 {
@@ -789,121 +788,16 @@ const syncSwipeShardBatchUniforms = (
   })
 }
 
-const createTrailPolyline = (gl: any) =>
-{
-  const points = Array.from({ length: MAX_SWIPE_POINTS_PER_STROKE }, () => new Vec3(-2, -2, 0))
-  const ageData = new Float32Array(MAX_SWIPE_POINTS_PER_STROKE * 2)
-  const polyline = new Polyline(gl, {
-    points,
-    vertex: swipeTrailVertex,
-    fragment: swipeTrailFragment,
-    uniforms: {
-      uTrailStartColor: { value: [0, 0.39215687, 1] },
-      uTrailMidColor: { value: [0, 0.39215687, 1] },
-      uTrailEndColor: { value: [0, 0.39215687, 1] },
-      uTrailParams: { value: [0.42058441, 8, 1, 0] },
-      uTrailAlphaParams: { value: [1, 1, 0, 0.6] },
-    },
-    attributes: {
-      age: { size: 1, data: ageData },
-    },
-  })
-
-  polyline.mesh.frustumCulled = false
-  polyline.mesh.program.transparent = true
-  polyline.mesh.program.setBlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-  polyline.mesh.program.depthTest = false
-  polyline.mesh.program.depthWrite = false
-  polyline.mesh.program.cullFace = false
-
-  return {
-    polyline,
-    points,
-    ageData,
-  }
-}
-
-const updateTrailPolyline = (
-  stroke: SwipeStrokeState,
-  trailPolyline: ReturnType<typeof createTrailPolyline>,
-  config: RuntimeConfig,
-  runtimeState: RuntimeState,
-  currentTime: number
-) =>
-{
-  const { polyline, points, ageData } = trailPolyline
-  if (stroke.pointCount < 2)
-  {
-    return false
-  }
-
-  const originCssX = stroke.originX * runtimeState.width
-  const originCssY = (1 - stroke.originY) * runtimeState.height
-  const lastPoint = stroke.points[stroke.pointCount - 1]
-
-  for (let index = 0; index < MAX_SWIPE_POINTS_PER_STROKE; index += 1)
-  {
-    const sourcePoint = index < stroke.pointCount ? stroke.points[index] : lastPoint
-    const absoluteCssX = originCssX + sourcePoint.x * runtimeState.height
-    const absoluteCssY = originCssY - sourcePoint.y * runtimeState.height
-    const ndcX = absoluteCssX / Math.max(runtimeState.width, 1) * 2 - 1
-    const ndcY = 1 - (absoluteCssY / Math.max(runtimeState.height, 1) * 2)
-
-    points[index].set(ndcX, ndcY, 0)
-
-    const age = Math.min(
-      1,
-      Math.max(0, (currentTime - sourcePoint.time) / Math.max(config.swipe.trail.lifetime, 0.0001))
-    )
-    ageData[index * 2] = age
-    ageData[index * 2 + 1] = age
-  }
-
-  polyline.updateGeometry()
-  polyline.geometry.attributes.age.needsUpdate = true
-  polyline.resize()
-  polyline.thickness.value = config.swipe.trail.width * runtimeState.height * runtimeState.dpr
-  polyline.miter.value = config.swipe.trail.cornerVertices > 0 ? 1 : 0
-  polyline.program.uniforms.uTrailStartColor.value = [
-    config.swipe.trail.startColor.r,
-    config.swipe.trail.startColor.g,
-    config.swipe.trail.startColor.b,
-  ]
-  polyline.program.uniforms.uTrailMidColor.value = [
-    config.swipe.trail.midColor.r,
-    config.swipe.trail.midColor.g,
-    config.swipe.trail.midColor.b,
-  ]
-  polyline.program.uniforms.uTrailEndColor.value = [
-    config.swipe.trail.endColor.r,
-    config.swipe.trail.endColor.g,
-    config.swipe.trail.endColor.b,
-  ]
-  polyline.program.uniforms.uTrailParams.value = [
-    config.swipe.trail.midTime,
-    config.swipe.trail.intensity,
-    0,
-    0,
-  ]
-  polyline.program.uniforms.uTrailAlphaParams.value = [
-    config.swipe.trail.alpha.start,
-    config.swipe.trail.alpha.mid,
-    config.swipe.trail.alpha.end,
-    config.swipe.trail.alpha.midTime,
-  ]
-  return true
-}
-
-export const createClickFx = ({
+export const createTouchEffect = ({
   target,
   listenTarget,
   config: initialConfig,
   pixelRatioCap = 2,
   autoBindPointer = true,
-}: CreateClickFxOptions): ClickFxInstance =>
+}: CreateTouchEffectOptions): TouchEffectInstance =>
 {
-  const config = createRuntimeConfig(initialConfig)
-  const debugState = defaultRuntimeDebugState()
+  const config = createTouchEffectConfig(initialConfig)
+  const debugState = defaultTouchEffectDebugState()
   const burstStore = createBurstStore()
   const swipeStore = createSwipeStore()
   const renderer = new Renderer({
@@ -1306,7 +1200,7 @@ export const createClickFx = ({
     drawFrame()
   }
 
-  const spawnAtLocal = (x: number, y: number) =>
+  const triggerClickAtLocal = (x: number, y: number) =>
   {
     currentTime = hostWindow.performance.now() * 0.001
     spawnBurst(
@@ -1320,7 +1214,7 @@ export const createClickFx = ({
     )
   }
 
-  const spawnAtClient = (clientX: number, clientY: number) =>
+  const triggerClickAtClient = (clientX: number, clientY: number) =>
   {
     const rect = target.getBoundingClientRect()
     if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom)
@@ -1328,11 +1222,8 @@ export const createClickFx = ({
       return
     }
 
-    spawnAtLocal(clientX - rect.left, clientY - rect.top)
+    triggerClickAtLocal(clientX - rect.left, clientY - rect.top)
   }
-
-  const spawnClickAtClient = spawnAtClient
-  const spawnClickAtLocal = spawnAtLocal
 
   const getRuntimeTime = (timeSeconds?: number) =>
     timeSeconds ?? hostWindow.performance.now() * 0.001
@@ -1475,7 +1366,7 @@ export const createClickFx = ({
     }
 
     currentTime = hostWindow.performance.now() * 0.001
-    spawnAtLocal(event.clientX - rect.left, event.clientY - rect.top)
+    triggerClickAtLocal(event.clientX - rect.left, event.clientY - rect.top)
     beginSwipeFromPointer(event)
   }
 
@@ -1531,13 +1422,13 @@ export const createClickFx = ({
     endAllTrails()
   }
 
-  const updateConfig = (partial: RuntimeConfigPatch) =>
+  const updateConfig = (partial: TouchEffectConfigPatch) =>
   {
-    mergeRuntimeConfig(config, partial)
+    mergeTouchEffectConfig(config, partial)
     drawFrame()
   }
 
-  const setDebugState = (partial: Partial<RuntimeDebugState>) =>
+  const setDebugState = (partial: Partial<TouchEffectDebugState>) =>
   {
     if (partial.previewMode)
     {
@@ -1603,12 +1494,10 @@ export const createClickFx = ({
   resize()
   requestAnimationFrame(render)
 
-  const instance: InternalClickFxInstance = {
+  const instance: InternalTouchEffectInstance = {
     canvas,
-    spawnAtClient,
-    spawnAtLocal,
-    spawnClickAtClient,
-    spawnClickAtLocal,
+    triggerClickAtClient,
+    triggerClickAtLocal,
     beginTrailAtClient,
     appendTrailAtClient,
     beginTrailAtLocal,

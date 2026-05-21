@@ -5,7 +5,7 @@ import {
   panelDefinitions,
   previewOptions,
   selectControls,
-} from './lab-config'
+} from '../config/defaults'
 import type {
   ColorControlDefinition,
   ConfigPath,
@@ -13,16 +13,16 @@ import type {
   NumericControlDefinition,
   PanelKey,
   SelectControlDefinition,
-} from './types'
+} from '../config/types'
 import type {
   ColorRgb,
   LayerPreviewMode,
-  RuntimeConfig,
+  TouchEffectConfig,
 } from 'blue-archive-touch-effect'
 
 type DebugPanelOptions = {
   app: HTMLDivElement
-  config: RuntimeConfig
+  config: TouchEffectConfig
   getPreviewMode: () => LayerPreviewMode
   getBackgroundColor: () => LabAppearanceState['backgroundColor']
   readPath: (path: ConfigPath) => unknown

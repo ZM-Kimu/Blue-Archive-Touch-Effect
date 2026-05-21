@@ -34,6 +34,6 @@ jobs:
       - name: Upload packed tarball
         uses: actions/upload-artifact@v4
         with:
-          name: click-fx-package
+          name: touch-effect-package
           path: blue-archive-touch-effect-*.tgz
           if-no-files-found: error

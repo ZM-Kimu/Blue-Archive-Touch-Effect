@@ -1,16 +1,16 @@
 import {
-  createClickFx,
-  type ClickFxInstance,
+  createTouchEffect,
+  type TouchEffectInstance,
   type ColorRgb,
   type LayerPreviewMode,
-  type RuntimeConfig,
-  type RuntimeConfigPatch,
+  type TouchEffectConfig,
+  type TouchEffectConfigPatch,
 } from 'blue-archive-touch-effect'
-import { defaultConfig } from './lab-config'
-import { createDebugPanel } from './ui'
-import type { ConfigPath, LabAppearanceState } from './types'
+import { defaultConfig } from '../config/defaults'
+import { createDebugPanel } from '../controls/debug-panel'
+import type { ConfigPath, LabAppearanceState } from '../config/types'
 
-type LabClickFxInstance = ClickFxInstance & {
+type LabTouchEffectInstance = TouchEffectInstance & {
   setDebugState: (partial: { previewMode?: LayerPreviewMode }) => void
 }
 
@@ -34,10 +34,10 @@ const cloneValue = <T>(value: T): T =>
   return value
 }
 
-const getPathValue = (config: RuntimeConfig, path: ConfigPath): unknown =>
+const getPathValue = (config: TouchEffectConfig, path: ConfigPath): unknown =>
   path.split('.').reduce<unknown>((current, key) => (current as Record<string, unknown>)[key], config as unknown)
 
-const setPathValue = (config: RuntimeConfig, path: ConfigPath, value: unknown) =>
+const setPathValue = (config: TouchEffectConfig, path: ConfigPath, value: unknown) =>
 {
   const segments = path.split('.')
   const last = segments.pop()
@@ -53,7 +53,7 @@ const setPathValue = (config: RuntimeConfig, path: ConfigPath, value: unknown) =
   target[last] = value
 }
 
-const buildPatch = (path: ConfigPath, value: unknown): RuntimeConfigPatch =>
+const buildPatch = (path: ConfigPath, value: unknown): TouchEffectConfigPatch =>
 {
   const segments = path.split('.')
   const root: Record<string, unknown> = {}
@@ -71,10 +71,10 @@ const buildPatch = (path: ConfigPath, value: unknown): RuntimeConfigPatch =>
     current = current[segment] as Record<string, unknown>
   })
 
-  return root as RuntimeConfigPatch
+  return root as TouchEffectConfigPatch
 }
 
-export const bootstrapClickFx = () =>
+export const bootstrapTouchEffectLab = () =>
 {
   const app = document.querySelector<HTMLDivElement>('#app')
 
@@ -83,7 +83,7 @@ export const bootstrapClickFx = () =>
     throw new Error('App root not found')
   }
 
-  const config: RuntimeConfig = cloneValue(defaultConfig)
+  const config: TouchEffectConfig = cloneValue(defaultConfig)
   const appearance: LabAppearanceState = {
     backgroundColor: '#000000',
   }
@@ -131,12 +131,12 @@ export const bootstrapClickFx = () =>
   stage.className = 'app-stage'
   panelController.shell.prepend(stage)
 
-  const runtime = createClickFx({
+  const runtime = createTouchEffect({
     target: stage,
     listenTarget: stage,
     config,
     autoBindPointer: true,
-  }) as LabClickFxInstance
+  }) as LabTouchEffectInstance
 
   const syncControls = () =>
   {

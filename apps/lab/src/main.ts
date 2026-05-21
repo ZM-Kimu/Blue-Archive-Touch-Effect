@@ -1,4 +1,4 @@
-import './styles.css'
-import { bootstrapClickFx } from './app'
+import './styles/main.css'
+import { bootstrapTouchEffectLab } from './app/bootstrap'
 
-bootstrapClickFx()
+bootstrapTouchEffectLab()

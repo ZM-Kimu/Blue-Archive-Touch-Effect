@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Breaking: renamed the public runtime API from ClickFx/Runtime naming to TouchEffect naming.
+- Breaking: removed legacy `createClickFx`, `spawnAtClient`, `spawnAtLocal`, and `spawnClick...` public names.
+- Moved the workspace package directory from `packages/click-fx` to `packages/touch-effect` while keeping the npm package name `blue-archive-touch-effect`.
+- Reorganized docs, lab files, tests, shaders, runtime, state, and rendering helpers into domain-oriented directories.
+
 ## 0.2.0
 
 - Breaking: replaced `arcColorR/G/B` with a unified `themeColor: { r, g, b }` runtime config field.
@@ -10,11 +17,11 @@
 ## 0.1.0
 
 - First public stable release of the attachable click FX runtime.
-- Ships `createClickFx(...)` as the production browser entrypoint.
+- Ships `createTouchEffect(...)` as the production browser entrypoint.
 - Includes the GitHub Actions CI and Trusted Publishing release flow.
 
 ## 0.1.0-alpha.0
 
 - First public packaging pass for the attachable click FX runtime.
-- Ships `createClickFx(...)` as the production entrypoint.
+- Ships `createTouchEffect(...)` as the production entrypoint.
 - Keeps the lab/debug app in the monorepo and out of the package surface.
