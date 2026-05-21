@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.0
+
 - Breaking: renamed the public runtime API from ClickFx/Runtime naming to TouchEffect naming.
 - Breaking: removed legacy `createClickFx`, `spawnAtClient`, `spawnAtLocal`, and `spawnClick...` public names.
 - Moved the workspace package directory from `packages/click-fx` to `packages/touch-effect` while keeping the npm package name `blue-archive-touch-effect`.
